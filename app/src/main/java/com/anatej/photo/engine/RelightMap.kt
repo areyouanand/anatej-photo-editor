@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import com.anatej.photo.model.LightStyle
 import com.anatej.photo.model.PortraitLight
 import kotlin.math.PI
 import kotlin.math.cos
@@ -312,11 +313,14 @@ object RelightMap {
         val softness = light.softness.coerceIn(0f, 1f)
         val fill = light.fill.coerceIn(0f, 1f)
         val dist = sqrt(dx * dx + dy * dy)
+        val isFlash = light.style == LightStyle.Flashlight
 
-        // Softbox falloff: 1 at the centre, tightens with hardness, no long hazy tail.
-        val exponent = 2.2f + (1f - softness) * 4.0f
+        // Flashlight: inverse-square beam — bright hotspot, tight mid-tones, almost
+        // no tail, squared. Softbox: a gentler broad falloff (the old haze, now shapeable).
+        val exponent = if (isFlash) 3.4f + (1f - softness) * 4.2f else 2.2f + (1f - softness) * 4.0f
         val ratio = dist / radius
-        val falloff = 1f / (1f + (ratio * ratio).pow(exponent * 0.5f))
+        val beam = 1f / (1f + ratio.pow(exponent))
+        val falloff = if (isFlash) beam * beam else beam
         if (falloff <= 0.003f) return LightSample(0f, 0f, 0f)
 
         // Directional key from azimuth/elevation, blended with the positional pull
@@ -333,9 +337,9 @@ object RelightMap {
         lx /= lLen; ly /= lLen; lz /= lLen
 
         val ndlRaw = nx * lx + ny * ly + nz * lz
-        // Wrap diffuse for skin translucency; 0.35 keeps the shadow side from going dead black.
+        // Flashlight wrap is thin (dark shadow side); softbox wrap is generous (soft haze).
         run {
-            val wrapAmt = 0.35f
+            val wrapAmt = if (isFlash) 0.15f else 0.35f
             val wrap = ((ndlRaw + wrapAmt) / (1f + wrapAmt)).coerceIn(0f, 1f)
             val shaped = wrap.pow(1.4f)
 
@@ -348,8 +352,8 @@ object RelightMap {
             val m = if (light.subjectOnly) spill + (1f - spill) * mask else 1f
 
             val diffuse = shaped * eff * falloff * m
-            // Opposing fill lift, strongest on the shadow side.
-            val fillAmt = eff * falloff * m * fill * 0.35f * (1f - wrap * 0.5f)
+            // Opposing fill lift; the softbox style gets a fuller fill, flashlight almost none.
+            val fillAmt = eff * falloff * m * fill * (if (isFlash) 0.12f else 0.35f) * (1f - wrap * 0.5f)
 
             // Tight specular on skin only (never into the background spill).
             var hx = lx; var hy = ly; var hz = lz + 1f
@@ -362,7 +366,7 @@ object RelightMap {
             val shade = (1f - wrap).pow(1.3f) * eff * falloff * mask * shadowStrength
 
             val raw = diffuse + fillAmt + spec
-            val softLit = raw / (1f + raw * 0.30f)
+            val softLit = raw / (1f + raw * (if (isFlash) 0.15f else 0.30f))
             return LightSample(
                 light = softLit.coerceIn(0f, 1f),
                 shade = shade.coerceIn(0f, 1f),

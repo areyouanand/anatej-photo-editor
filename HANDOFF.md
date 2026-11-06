@@ -1,18 +1,21 @@
 # Anatej Photo Editor — Handoff
 
 **Version:** 0.3.0 (versionCode 3)
-**Last updated:** 2026-11-06, after flashlight-style relight pass
+**Last updated:** 2026-11-06, after lighting style choice, Square Pic crop, and share intent
 **Location:** `/mnt/1tb/AI stuff/FUJI Camera`
 **Platform:** Android 10+ (`minSdk 29`), built against API 36
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `3ea41de9685b7e998b2225eb64419d818e63d1d2c9d0e4024a7374e865246786`
+**SHA-256:** `f6ec7c6a6d9024706d173f57b7ebd8352c05704678a7e19cacee04ebe01c222c`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
-**State:** latest 0.3.0 APK (SHA above) **installed on the CPH2841** and visually verified
-after unlock: at 90/100 the relight is a tight hotspot on the face with the frame staying
-dark (flashlight beam², thin wrap, minimal fill, 5% spill) — the bright haze is gone.
-Emulator closed. Test media removed.
+**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841. Shared a photo into the
+app via ACTION_SEND (manifest filters for SEND + SEND_MULTIPLE; MainActivity extracts
+EXTRA_STREAM), selected the 1:1 crop on the preview grid, and saw CROP LIVE state. A
+fit bug in cropBitmap (landscape 1:1 keeping full width) was fixed; the corrected build
+installed but the phone disconnected before the final square-export check. Lighting style
+switch (Softbox/Flash) is in Advanced. Emulator closed. Test media pending cleanup on
+reconnect.
 
 ---
 
@@ -160,6 +163,9 @@ The editor header is reserved for back, undo/redo, and save.
 | Light UX | VIEW MASK orange tint, interactive DRAG LIGHT / LIGHT OFF / VIEW MASK / LIGHT⇄PAN chips, labeled SUBJECT MASKING + Background spill sliders, scrollable Light panel (360 dp), slider haptic detent ticks |
 | Export quality + About | Settings stores `exportQuality` (70–100%, default 95%); `saveToGallery` compresses with it. About shows `DEVELOPER: @areyouanand` and a tappable `github.com/areyouanand/anatej-photo-editor` link. **User-verified manually on device.** |
 | Auto-rescue strength + looks | `autoRescueStrength` (30–200%) scales the whole `autoEnhance` recipe (exposure/contrast/saturation + relight). Looks rebuilt: Fujifilm (Provia/Velvia/Chrome/NEG/Astia/Acros/Reala), Nikon (+Flat), Hasselblad (+X2D) each with distinct grain/vignette/sharpness/bloom recipes; preview shows bloom/sharpen via a blurred overlay (`RelightMap.blurredCopy`), export bakes unsharp-mask + highlight bloom in `PhotoRenderer.applyEnhancements`. On-device: slider visible at 100% default, Fuji series renders, Velvia preview and 1920×1080 export both show the stock curve. |
+| Lighting style switch | `PortraitLight.style` (Softbox / Flashlight) branches falloff, wrap, fill and soft-clip in the shared `sampleLight`; toggle lives in the Advanced Light section, default Flashlight. |
+| Square Pic crop | New CROP tab with Off / 1:1 / 4:5 / 9:16 / 16:9 chips, drag-to-reposition, 1–3× crop zoom, and `cropBitmap` in export (largest fitting rect, then zoom). |
+| App-to-app sharing | Manifest SEND/SEND_MULTIPLE image filters; `MainActivity.sharedImageUri()` routes EXTRA_STREAM into the editor; `loadPhoto` decodes content URIs. |
 | Simple brighten | Light panel opens on one **Brighten face** slider (`EditorViewModel.brightenFace` auto-places on the subject and enables the key) + Auto-brighten; presets/direction pad/sliders sit behind **Advanced tools**. Display scale is 0–100, but the internal model maps it to `(intensity/100)·30%` of full relight — 100 behaves like the old 30% mark. |
 | Emulator | Stopped after the pass at the user's request; no emulator process/window remains |
 

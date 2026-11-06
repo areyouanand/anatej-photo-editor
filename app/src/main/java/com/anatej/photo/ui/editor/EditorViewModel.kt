@@ -435,6 +435,25 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         scheduleRelightOverlay()
     }
 
+    fun setCrop(aspect: Float) {
+        record("crop-aspect")
+        _state.update { it.copy(cropAspect = aspect.coerceIn(0f, 3f)) }
+    }
+
+    fun setCropZoom(zoom: Float) {
+        record("crop-zoom")
+        _state.update { it.copy(cropZoom = zoom.coerceIn(1f, 3f)) }
+    }
+
+    fun setCropCenter(x: Float, y: Float) {
+        _state.update { it.copy(cropCenterX = x.coerceIn(0.05f, 0.95f), cropCenterY = y.coerceIn(0.05f, 0.95f)) }
+    }
+
+    fun resetCrop() {
+        record("crop-reset", force = true)
+        _state.update { it.copy(cropAspect = 0f, cropZoom = 1f, cropCenterX = 0.5f, cropCenterY = 0.5f) }
+    }
+
     fun setAutoRescueStrength(strength: Float) {
         settingsStore.autoRescueStrength = strength.coerceIn(0.3f, 2f)
         _state.update { it.copy(autoRescueStrength = settingsStore.autoRescueStrength) }
@@ -577,7 +596,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
                 try {
-                    withContext(Dispatchers.IO) { saveToGallery(rendered) }
+                    val finalBitmap = cropBitmap(rendered, snapshot.cropAspect, snapshot.cropZoom, snapshot.cropCenterX, snapshot.cropCenterY)
+                    withContext(Dispatchers.IO) { saveToGallery(finalBitmap) }
+                    if (finalBitmap !== rendered) finalBitmap.recycle()
                 } finally {
                     rendered.recycle()
                 }
@@ -672,6 +693,25 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         return map
+    }
+
+    private fun cropBitmap(
+        source: Bitmap,
+        aspect: Float,
+        zoom: Float,
+        centerX: Float,
+        centerY: Float
+    ): Bitmap {
+        if (aspect <= 0.01f || source.width < 2 || source.height < 2) return source
+        val safeZoom = zoom.coerceIn(1f, 3f)
+        // Largest rect of the target aspect that fits inside the source, then zoom into it.
+        val fitH = minOf(source.height.toFloat(), source.width / aspect)
+        val fitW = fitH * aspect
+        val w = (fitW / safeZoom).roundToInt().coerceIn(1, source.width)
+        val h = (fitH / safeZoom).roundToInt().coerceIn(1, source.height)
+        val left = ((centerX * source.width) - w / 2f).roundToInt().coerceIn(0, source.width - w)
+        val top = ((centerY * source.height) - h / 2f).roundToInt().coerceIn(0, source.height - h)
+        return Bitmap.createBitmap(source, left, top, w, h)
     }
 
     private fun saveToGallery(bitmap: Bitmap) {

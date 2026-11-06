@@ -75,6 +75,12 @@ fun EditorCanvas(
     bloomOverlay: Bitmap? = null,
     compare: Boolean,
     lightEditable: Boolean,
+    cropEditable: Boolean = false,
+    cropAspect: Float = 0f,
+    cropZoom: Float = 1f,
+    cropCenterX: Float = 0.5f,
+    cropCenterY: Float = 0.5f,
+    onCropCenter: (Float, Float) -> Unit = { _, _ -> },
     showMask: Boolean = false,
     zoom: Float,
     pan: Offset,
@@ -108,6 +114,9 @@ fun EditorCanvas(
     val zoomNow by rememberUpdatedState(zoom)
     val panNow by rememberUpdatedState(pan)
     val transformNow by rememberUpdatedState(onTransform)
+    val cropCenterNow by rememberUpdatedState(Offset(cropCenterX, cropCenterY))
+    val cropCenterCallback by rememberUpdatedState(onCropCenter)
+    val cropEditableNow by rememberUpdatedState(cropEditable)
 
     val gestureModifier = Modifier
         .pointerInput(bitmap, display, lightEditable, light.enabled) {
@@ -193,8 +202,14 @@ fun EditorCanvas(
                             0 -> {
                                 val total = change.position - down.position
                                 if (total.getDistance() > viewConfiguration.touchSlop) {
-                                    mode = if (lightEditable && light.enabled) 1 else 2
-                                    if (mode == 1) {
+                                    mode = if (cropEditableNow) 2 else if (lightEditable && light.enabled) 1 else 2
+                                    if (mode == 2 && cropEditableNow) {
+                                        val c = cropCenterNow
+                                        cropCenterCallback(
+                                            c.x - total.x / currentRect().width,
+                                            c.y - total.y / currentRect().height
+                                        )
+                                    } else if (mode == 1) {
                                         placeLight(change.position)
                                     } else {
                                         transformNow(
@@ -214,10 +229,21 @@ fun EditorCanvas(
                             2 -> {
                                 val delta = change.position - change.previousPosition
                                 if (delta != Offset.Zero) {
-                                    transformNow(
-                                        zoomNow,
-                                        clampPan(panNow + delta, zoomNow)
-                                    )
+                                    if (cropEditableNow) {
+                                        val c = cropCenterNow
+                                        val rectNow = currentRect()
+                                        if (rectNow.width > 0f && rectNow.height > 0f) {
+                                            cropCenterCallback(
+                                                c.x - delta.x / rectNow.width,
+                                                c.y - delta.y / rectNow.height
+                                            )
+                                        }
+                                    } else {
+                                        transformNow(
+                                            zoomNow,
+                                            clampPan(panNow + delta, zoomNow)
+                                        )
+                                    }
                                     change.consume()
                                 }
                             }
@@ -283,6 +309,75 @@ fun EditorCanvas(
                     filterQuality = FilterQuality.Medium
                 )
             }
+        }
+
+        if (cropAspect > 0.01f && !compare) {
+            val aspect = cropAspect
+            val safeZoom = cropZoom.coerceIn(1f, 3f)
+            val cropW: Float
+            val cropH: Float
+            if (aspect >= 1f) {
+                cropW = rect.width / safeZoom
+                cropH = cropW / aspect
+            } else {
+                cropH = rect.height / safeZoom
+                cropW = cropH * aspect
+            }
+            val cw = cropW.coerceIn(1f, rect.width)
+            val ch = cropH.coerceIn(1f, rect.height)
+            val cx = rect.left + cropCenterX * rect.width
+            val cy = rect.top + cropCenterY * rect.height
+            val cropRect = Rect(
+                (cx - cw / 2f).coerceIn(rect.left, rect.right - cw),
+                (cy - ch / 2f).coerceIn(rect.top, rect.bottom - ch),
+                (cx + cw / 2f).coerceIn(rect.left + cw, rect.right),
+                (cy + ch / 2f).coerceIn(rect.top + ch, rect.bottom)
+            ).let {
+                // Reclamp width/height so the rect stays inside while preserving size.
+                val l = (cx - cw / 2f).coerceIn(rect.left, rect.right - cw)
+                val t2 = (cy - ch / 2f).coerceIn(rect.top, rect.bottom - ch)
+                Rect(l, t2, l + cw, t2 + ch)
+            }
+            // Dim outside
+            drawRect(Color.Black.copy(alpha = 0.55f), topLeft = rect.topLeft, size = rect.size)
+            drawRect(Color.Transparent, topLeft = cropRect.topLeft, size = cropRect.size)
+            // Re-draw the cropped region over the dim (clear by drawing image again)
+            drawImage(
+                image = displayImage,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(display.width, display.height),
+                dstOffset = IntOffset(cropRect.left.roundToInt(), cropRect.top.roundToInt()),
+                dstSize = IntSize(cropRect.width.roundToInt(), cropRect.height.roundToInt()),
+                colorFilter = if (compare) null else filter,
+                filterQuality = FilterQuality.Medium
+            )
+            // Grid (rule of thirds)
+            drawLine(
+                Color.White.copy(alpha = 0.75f),
+                cropRect.topLeft + Offset(cropRect.width / 3f, 0f),
+                cropRect.topLeft + Offset(cropRect.width / 3f, cropRect.height),
+                1.5f
+            )
+            drawLine(
+                Color.White.copy(alpha = 0.75f),
+                cropRect.topLeft + Offset(cropRect.width * 2f / 3f, 0f),
+                cropRect.topLeft + Offset(cropRect.width * 2f / 3f, cropRect.height),
+                1.5f
+            )
+            drawLine(
+                Color.White.copy(alpha = 0.75f),
+                cropRect.topLeft + Offset(0f, cropRect.height / 3f),
+                cropRect.topLeft + Offset(cropRect.width, cropRect.height / 3f),
+                1.5f
+            )
+            drawLine(
+                Color.White.copy(alpha = 0.75f),
+                cropRect.topLeft + Offset(0f, cropRect.height * 2f / 3f),
+                cropRect.topLeft + Offset(cropRect.width, cropRect.height * 2f / 3f),
+                1.5f
+            )
+            // Border
+            drawRect(Color.White, cropRect.topLeft, cropRect.size, style = Stroke(2f))
         }
 
         if (!compare) {

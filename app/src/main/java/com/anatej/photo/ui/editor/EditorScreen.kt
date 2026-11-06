@@ -85,7 +85,8 @@ private enum class EditorTab(val label: String) {
     Auto("AUTO"),
     Light("LIGHT"),
     Adjust("ADJUST"),
-    Looks("LOOKS")
+    Looks("LOOKS"),
+    Crop("CROP")
 }
 
 @Composable
@@ -134,6 +135,7 @@ fun EditorScreen(
                     state = state,
                     viewModel = viewModel,
                     lightEditable = selectedTab == EditorTab.Light && gestureIsLight,
+                    cropEditable = selectedTab == EditorTab.Crop,
                     showMask = showMask,
                     onShowMaskChange = { showMask = it },
                     onInteractionMode = { gestureIsLight = it },
@@ -164,6 +166,7 @@ fun EditorScreen(
                             onInteractionMode = { gestureIsLight = it }
                         )
                         EditorTab.Adjust -> AdjustPanel(state, viewModel)
+                        EditorTab.Crop -> CropPanel(state = state, viewModel = viewModel)
                         EditorTab.Looks -> LooksPanel(
                             state = state,
                             viewModel = viewModel,
@@ -269,6 +272,7 @@ private fun PreviewArea(
     state: EditorUiState,
     viewModel: EditorViewModel,
     lightEditable: Boolean,
+    cropEditable: Boolean,
     showMask: Boolean,
     onShowMaskChange: (Boolean) -> Unit,
     onInteractionMode: (Boolean) -> Unit,
@@ -302,6 +306,12 @@ private fun PreviewArea(
                 bloomOverlay = state.bloomOverlay,
                 compare = state.compare || holdCompare,
                 lightEditable = lightEditable,
+                cropEditable = cropEditable,
+                cropAspect = state.cropAspect,
+                cropZoom = state.cropZoom,
+                cropCenterX = state.cropCenterX,
+                cropCenterY = state.cropCenterY,
+                onCropCenter = viewModel::setCropCenter,
                 showMask = showMask,
                 zoom = zoom,
                 pan = pan,
@@ -862,6 +872,23 @@ private fun LightPanel(
             }
         }
 
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MicroLabel("LIGHT STYLE")
+            Spacer(Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SegmentedToggle(
+                    label = "◐ SOFTBOX",
+                    selected = light.style == com.anatej.photo.model.LightStyle.Softbox,
+                    onClick = { viewModel.updateLight("light-style") { it.copy(style = com.anatej.photo.model.LightStyle.Softbox) } }
+                )
+                SegmentedToggle(
+                    label = "◉ FLASH",
+                    selected = light.style == com.anatej.photo.model.LightStyle.Flashlight,
+                    onClick = { viewModel.updateLight("light-style") { it.copy(style = com.anatej.photo.model.LightStyle.Flashlight) } }
+                )
+            }
+        }
+
         ValueSlider(
             label = "Intensity",
             value = light.intensity.coerceIn(0f, 100f),
@@ -1081,6 +1108,66 @@ private fun MicroLabel(text: String) {
         fontSize = 9.sp
     )
 }
+
+@Composable
+private fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
+    val t = LocalAnatej.current
+    val aspect = state.cropAspect
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)
+    ) {
+        Text(
+            text = "Crop for profile",
+            style = MaterialTheme.typography.titleLarge,
+            color = t.text
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = "Pick a square (1:1) for a WhatsApp profile picture, or another story size. Drag on the frame to reposition; pinch or use the slider to zoom. Export applies the crop.",
+            style = MaterialTheme.typography.bodySmall,
+            color = t.textDim
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PresetChip("OFF", aspect <= 0.01f) { viewModel.setCrop(0f) }
+            PresetChip("1:1 SQUARE", kotlin.math.abs(aspect - 1f) < 0.01f) { viewModel.setCrop(1f) }
+            PresetChip("4:5", kotlin.math.abs(aspect - 0.8f) < 0.01f) { viewModel.setCrop(0.8f) }
+            PresetChip("9:16", kotlin.math.abs(aspect - 0.5625f) < 0.01f) { viewModel.setCrop(0.5625f) }
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PresetChip("16:9", kotlin.math.abs(aspect - 1.7778f) < 0.02f) { viewModel.setCrop(1.7778f) }
+            AnatejButton(
+                text = "Reset crop",
+                onClick = viewModel::resetCrop,
+                modifier = Modifier.weight(1f),
+                filled = false
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        ValueSlider(
+            label = "Crop zoom",
+            value = state.cropZoom,
+            range = 1f..3f,
+            onChange = viewModel::setCropZoom,
+            format = { "${it.nf1()}×" },
+            enabled = aspect > 0.01f
+        )
+        Spacer(Modifier.height(4.dp))
+        MonoLabel(
+            text = when {
+                aspect <= 0.01f -> "NO CROP — FULL FRAME"
+                else -> {
+                    val target = if (kotlin.math.abs(aspect - 1f) < 0.01f) "864×864" else ""
+                    "CROP LIVE — TAP ● DRAG TO MOVE" + if (target.isNotEmpty()) " · $target" else ""
+                }
+            },
+            color = if (aspect > 0.01f) t.accent else t.textDim
+        )
+    }
+}
+
+private fun Float.nf1(): String = String.format(java.util.Locale.US, "%.1f", this)
 
 @Composable
 private fun AdjustPanel(state: EditorUiState, viewModel: EditorViewModel) {

@@ -29,6 +29,8 @@ data class Adjustments(
     }
 }
 
+enum class LightStyle { Softbox, Flashlight }
+
 /**
  * A single portrait light. x/y is the spot centre on the photo (0..1, y down);
  * azimuth/elevation control the light direction, softness the softbox falloff,
@@ -48,7 +50,16 @@ data class PortraitLight(
     val elevation: Float = 35f,
     val softness: Float = 0.5f,
     val fill: Float = 0.22f,
-    val spill: Float = 0.12f
+    val spill: Float = 0.05f,
+    val style: LightStyle = LightStyle.Flashlight
+)
+
+/** Crop-to-aspect settings for profile-style exports (1:1 square, stories, ...). */
+data class CropConfig(
+    val aspect: Float = 0f,     // 0 = off, else width/height (1f = square)
+    val zoom: Float = 1f,
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.5f
 )
 
 enum class LookSeries(val label: String, val ticker: String) {
@@ -234,6 +245,10 @@ data class EditorUiState(
     val relightShadow: Bitmap? = null,
     val bloomOverlay: Bitmap? = null,
     val autoRescueStrength: Float = 1f,
+    val cropAspect: Float = 0f,
+    val cropZoom: Float = 1f,
+    val cropCenterX: Float = 0.5f,
+    val cropCenterY: Float = 0.5f,
     val maskScanning: Boolean = false,
     val thumbs: Map<String, Bitmap> = emptyMap(),
     val loading: Boolean = false,

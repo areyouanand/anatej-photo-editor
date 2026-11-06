@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
-        incomingUri.value = intent?.data
+        incomingUri.value = intent?.let(::sharedImageUri)
         setContent {
             AnatejApp(pendingUri = incomingUri)
         }
@@ -28,6 +28,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        incomingUri.value = intent.data
+        incomingUri.value = sharedImageUri(intent)
+    }
+
+    private fun sharedImageUri(intent: Intent): Uri? {
+        // Share-from-other-apps arrives as EXTRA_STREAM; SEND_MULTIPLE carries a list.
+        val stream: Any? = when (intent.action) {
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val list = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                list?.firstOrNull()
+            }
+            else -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) ?: intent.data
+        }
+        return stream as? Uri
     }
 }
