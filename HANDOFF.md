@@ -9,10 +9,10 @@ TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
 **SHA-256:** `3ea41de9685b7e998b2225eb64419d818e63d1d2c9d0e4024a7374e865246786`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
-**State:** latest 0.3.0 APK (SHA above) **installed on the CPH2841**. Relight retuned to a
-flashlight beam (beam² falloff, thin wrap, minimal fill, 5% default spill) replacing the
-bright haze. Install succeeded; the phone was on the lock screen for the on-device
-verification, so the visual pass was pending unlock. Emulator closed. Test media removed.
+**State:** latest 0.3.0 APK (SHA above) **installed on the CPH2841** and visually verified
+after unlock: at 90/100 the relight is a tight hotspot on the face with the frame staying
+dark (flashlight beam², thin wrap, minimal fill, 5% spill) — the bright haze is gone.
+Emulator closed. Test media removed.
 
 ---
 
