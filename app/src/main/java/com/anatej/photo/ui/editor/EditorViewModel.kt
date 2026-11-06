@@ -4,10 +4,13 @@ import android.app.Application
 import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.media.ExifInterface
 import android.net.Uri
+import android.os.Environment
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.anatej.photo.engine.CubeLutParser
@@ -18,11 +21,14 @@ import com.anatej.photo.engine.RelightMap
 import com.anatej.photo.engine.SubjectSegmenter
 import com.anatej.photo.data.SettingsStore
 import com.anatej.photo.model.Adjustments
+import com.anatej.photo.model.CropRect
 import com.anatej.photo.model.EditorUiState
 import com.anatej.photo.model.Look
 import com.anatej.photo.model.Looks
 import com.anatej.photo.model.Lut3D
+import com.anatej.photo.model.LutFileEntry
 import com.anatej.photo.model.PortraitLight
+import com.anatej.photo.model.SquareBgStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -48,8 +54,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private val resolver = application.contentResolver
     private val filesDir = application.filesDir
+    private val cacheDir = application.cacheDir
+    private val packageName = application.packageName
     private val segmenter = SubjectSegmenter()
     private val depthEstimator = DepthEstimator(application)
+    private var sourceExif: Map<String, String> = emptyMap()
 
     private val undoStack = ArrayDeque<EditSnapshot>()
     private val redoStack = ArrayDeque<EditSnapshot>()
@@ -70,6 +79,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         loadPersistedLut()
+        refreshSavedLuts()
     }
 
     fun loadPhoto(uri: Uri, scan: Boolean = true, subjectMasking: Boolean = true) {
@@ -113,6 +123,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             val photo = loaded.getOrNull() ?: return@launch
+            sourceExif = photo.exif
 
             val analysis = if (scan) {
                 runCatching {
@@ -134,6 +145,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     look = Looks.Original,
                     lookStrength = 1f,
                     light = PortraitLight(),
+                    crop = CropRect.Full,
+                    squarePic = false,
                     thumbs = thumbs,
                     loading = false,
                     saving = false,
@@ -249,9 +262,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private fun scheduleBlurOverlay() {
         val snapshot = _state.value
         val source = snapshot.source
-        val bloom = (snapshot.adjustments.bloom + snapshot.look.scaled(snapshot.lookStrength).bloom)
-        val sharpness = (snapshot.adjustments.sharpness + snapshot.look.scaled(snapshot.lookStrength).sharpness)
-        if (source == null || (bloom <= 0.01f && sharpness <= 0.01f && !snapshot.squarePic)) {
+        val scaledLook = snapshot.look.scaled(snapshot.lookStrength)
+        val bloom = snapshot.adjustments.bloom + scaledLook.bloom
+        val halation = snapshot.adjustments.halation + scaledLook.halation
+        val sharpness = snapshot.adjustments.sharpness + scaledLook.sharpness
+        val needSquareBlur = snapshot.squarePic && snapshot.squareBgStyle == SquareBgStyle.Blur
+        if (source == null || (bloom <= 0.01f && halation <= 0.01f && sharpness <= 0.01f && !needSquareBlur)) {
             if (snapshot.bloomOverlay != null) _state.update { it.copy(bloomOverlay = null) }
             return
         }
@@ -288,7 +304,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         light = _state.value.light,
         lut = _state.value.lut,
         lutName = _state.value.lutName,
-        lutStrength = _state.value.lutStrength
+        lutStrength = _state.value.lutStrength,
+        crop = _state.value.crop,
+        squarePic = _state.value.squarePic
     )
 
     private fun applySnapshot(snapshot: EditSnapshot) {
@@ -300,7 +318,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 light = snapshot.light,
                 lut = snapshot.lut,
                 lutName = snapshot.lutName,
-                lutStrength = snapshot.lutStrength
+                lutStrength = snapshot.lutStrength,
+                crop = snapshot.crop,
+                squarePic = snapshot.squarePic
             )
         }
         scheduleLutPreview()
@@ -347,11 +367,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 lookStrength = if (look.id == Looks.Original.id) 1f else state.lookStrength
             )
         }
+        scheduleBlurOverlay()
     }
 
     fun setLookStrength(strength: Float) {
         record("look-strength")
         _state.update { it.copy(lookStrength = strength.coerceIn(0f, 1f)) }
+        scheduleBlurOverlay()
     }
 
     fun updateLight(key: String, transform: (PortraitLight) -> PortraitLight) {
@@ -435,18 +457,131 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         scheduleRelightOverlay()
     }
 
-    fun setCrop(aspect: Float) {
-        record("crop-aspect")
-        _state.update { it.copy(cropAspect = aspect.coerceIn(0f, 3f)) }
+    fun updateCrop(crop: CropRect) {
+        record("crop-drag")
+        val l = crop.left.coerceIn(0f, 0.92f)
+        val t = crop.top.coerceIn(0f, 0.92f)
+        val r = crop.right.coerceIn(l + 0.08f, 1f)
+        val b = crop.bottom.coerceIn(t + 0.08f, 1f)
+        _state.update { it.copy(crop = crop.copy(left = l, top = t, right = r, bottom = b)) }
     }
 
-    fun setCropZoom(zoom: Float) {
-        record("crop-zoom")
-        _state.update { it.copy(cropZoom = zoom.coerceIn(1f, 3f)) }
+    fun setCropAspect(aspectLock: Float) {
+        record("crop-aspect", force = true)
+        _state.update { state ->
+            val src = state.source
+            if (aspectLock == 0f || src == null || src.width <= 0 || src.height <= 0) {
+                state.copy(crop = state.crop.copy(aspectLock = 0f))
+            } else {
+                val photoAspect = src.width.toFloat() / src.height.toFloat()
+                val targetAspect = if (aspectLock < 0f) photoAspect else aspectLock
+                val normRatio = (targetAspect / photoAspect).coerceAtLeast(0.05f)
+                val cx = (state.crop.left + state.crop.right) * 0.5f
+                val cy = (state.crop.top + state.crop.bottom) * 0.5f
+                val curAreaScale = kotlin.math.sqrt((state.crop.width * state.crop.height).coerceIn(0.15f, 1f))
+                val maxW = if (normRatio >= 1f) 1f else normRatio
+                val maxH = if (normRatio >= 1f) 1f / normRatio else 1f
+                val scale = if (aspectLock < 0f) 1f else curAreaScale.coerceIn(0.55f, 1f)
+                val nw = (maxW * scale).coerceIn(0.08f, 1f)
+                val nh = (maxH * scale).coerceIn(0.08f, 1f)
+                val left = (cx - nw * 0.5f).coerceIn(0f, 1f - nw)
+                val top = (cy - nh * 0.5f).coerceIn(0f, 1f - nh)
+                state.copy(
+                    crop = CropRect(
+                        left = left,
+                        top = top,
+                        right = left + nw,
+                        bottom = top + nh,
+                        aspectLock = aspectLock
+                    )
+                )
+            }
+        }
     }
 
-    fun setCropCenter(x: Float, y: Float) {
-        _state.update { it.copy(cropCenterX = x.coerceIn(0.05f, 0.95f), cropCenterY = y.coerceIn(0.05f, 0.95f)) }
+    fun rotate90() {
+        val current = _state.value
+        val src = current.source ?: return
+        record("rotate-90", force = true)
+        viewModelScope.launch {
+            val rotated = withContext(Dispatchers.Default) {
+                val m = android.graphics.Matrix().apply { postRotate(90f) }
+                Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+            }
+            val rotatedMask = current.subjectMask?.let { mask ->
+                withContext(Dispatchers.Default) {
+                    val m = android.graphics.Matrix().apply { postRotate(90f) }
+                    Bitmap.createBitmap(mask, 0, 0, mask.width, mask.height, m, true)
+                }
+            }
+            val c = current.crop
+            val newAspect = when {
+                c.aspectLock > 0f -> 1f / c.aspectLock
+                else -> c.aspectLock
+            }
+            val rotatedCrop = CropRect(
+                left = 1f - c.bottom,
+                top = c.left,
+                right = 1f - c.top,
+                bottom = c.right,
+                aspectLock = newAspect
+            )
+            _state.update { st ->
+                st.copy(
+                    source = rotated,
+                    subjectMask = rotatedMask,
+                    crop = rotatedCrop,
+                    light = st.light.copy(
+                        x = 1f - st.light.y,
+                        y = st.light.x
+                    )
+                )
+            }
+            prepareNormals(rotated, rotatedMask)
+            scheduleLutPreview()
+            scheduleBlurOverlay()
+        }
+    }
+
+    fun flipHorizontal() {
+        val current = _state.value
+        val src = current.source ?: return
+        record("flip-h", force = true)
+        viewModelScope.launch {
+            val flipped = withContext(Dispatchers.Default) {
+                val m = android.graphics.Matrix().apply { postScale(-1f, 1f, src.width / 2f, src.height / 2f) }
+                Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+            }
+            val flippedMask = current.subjectMask?.let { mask ->
+                withContext(Dispatchers.Default) {
+                    val m = android.graphics.Matrix().apply { postScale(-1f, 1f, mask.width / 2f, mask.height / 2f) }
+                    Bitmap.createBitmap(mask, 0, 0, mask.width, mask.height, m, true)
+                }
+            }
+            val c = current.crop
+            val flippedCrop = c.copy(
+                left = 1f - c.right,
+                right = 1f - c.left
+            )
+            _state.update { st ->
+                st.copy(
+                    source = flipped,
+                    subjectMask = flippedMask,
+                    crop = flippedCrop,
+                    light = st.light.copy(x = 1f - st.light.x)
+                )
+            }
+            prepareNormals(flipped, flippedMask)
+            scheduleLutPreview()
+            scheduleBlurOverlay()
+        }
+    }
+
+    fun setCropStraighten(degrees: Float) {
+        record("crop-straighten")
+        _state.update { state ->
+            state.copy(crop = state.crop.copy(straighten = degrees.coerceIn(-45f, 45f)))
+        }
     }
 
     fun setSquarePic(enabled: Boolean) {
@@ -455,9 +590,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         scheduleBlurOverlay()
     }
 
+    fun setSquareBlur(blur: Float) {
+        _state.update { it.copy(squareBlur = blur.coerceIn(0.15f, 1f)) }
+    }
+
+    fun setSquareBgStyle(style: SquareBgStyle) {
+        _state.update { it.copy(squareBgStyle = style) }
+        scheduleBlurOverlay()
+    }
+
     fun resetCrop() {
         record("crop-reset", force = true)
-        _state.update { it.copy(cropAspect = 0f, cropZoom = 1f, cropCenterX = 0.5f, cropCenterY = 0.5f) }
+        _state.update { it.copy(crop = CropRect.Full) }
     }
 
     fun setAutoRescueStrength(strength: Float) {
@@ -507,6 +651,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 look = Looks.Original,
                 lookStrength = 1f,
                 light = PortraitLight(),
+                crop = CropRect.Full,
+                squarePic = false,
                 lut = null,
                 lutName = null,
                 lutStrength = 1f,
@@ -514,6 +660,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         scheduleRelightOverlay()
+        scheduleBlurOverlay()
         deletePersistedLut()
     }
 
@@ -522,32 +669,99 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun importLut(uri: Uri) {
+        importLuts(listOf(uri))
+    }
+
+    fun importLuts(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    val text = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                        ?: error("Could not read that file.")
-                    val displayName = queryDisplayName(uri) ?: "Imported LUT"
-                    val lut = CubeLutParser.parse(text, displayName.substringBeforeLast('.'))
                     val dir = File(filesDir, "luts").apply { mkdirs() }
-                    File(dir, "active.cube").writeText(text)
-                    lut
+                    var lastLut: Lut3D? = null
+                    var importedCount = 0
+                    for (uri in uris) {
+                        val text = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                            ?: continue
+                        val displayName = (queryDisplayName(uri) ?: "Imported LUT").substringBeforeLast('.')
+                        val lut = runCatching { CubeLutParser.parse(text, displayName) }.getOrNull() ?: continue
+                        val safeName = displayName.replace(Regex("[^A-Za-z0-9._ -]"), "_").take(48).ifBlank { "lut_$importedCount" }
+                        File(dir, "$safeName.cube").writeText(text)
+                        File(dir, "active.cube").writeText(text)
+                        lastLut = lut
+                        importedCount++
+                    }
+                    val lut = lastLut ?: error("No valid 3D .cube LUT found.")
+                    Pair(lut, importedCount)
                 }
             }
-            result.onSuccess { lut ->
+            refreshSavedLuts()
+            result.onSuccess { (lut, count) ->
                 record("lut-import", force = true)
                 _state.update {
                     it.copy(
                         lut = lut,
                         lutName = lut.title,
                         lutStrength = 1f,
-                        message = "LUT loaded · ${lut.size}³ · ${lut.title}"
+                        message = if (count > 1) "$count LUTs imported · active: ${lut.title}"
+                        else "LUT loaded · ${lut.size}³ · ${lut.title}"
                     )
                 }
                 scheduleLutPreview()
             }.onFailure { error ->
                 _state.update { it.copy(message = "LUT rejected: ${error.message}") }
             }
+        }
+    }
+
+    fun selectSavedLut(entry: LutFileEntry) {
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val file = File(entry.path)
+                    val text = file.readText()
+                    val lut = CubeLutParser.parse(text, entry.name)
+                    val dir = File(filesDir, "luts").apply { mkdirs() }
+                    File(dir, "active.cube").writeText(text)
+                    lut
+                }
+            }
+            result.onSuccess { lut ->
+                record("lut-select", force = true)
+                _state.update {
+                    it.copy(
+                        lut = lut,
+                        lutName = entry.name,
+                        lutStrength = if (it.lut == null) 1f else it.lutStrength,
+                        message = "LUT · ${entry.name}"
+                    )
+                }
+                scheduleLutPreview()
+            }.onFailure { error ->
+                _state.update { it.copy(message = "Could not load LUT: ${error.message}") }
+            }
+        }
+    }
+
+    fun refreshSavedLuts() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val entries = ArrayList<LutFileEntry>()
+            val seen = HashSet<String>()
+            val internalDir = File(filesDir, "luts")
+            val downloadDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "LUTs")
+            for (dir in listOf(internalDir, downloadDir)) {
+                val files = runCatching {
+                    dir.listFiles { f -> f.isFile && f.extension.equals("cube", ignoreCase = true) && f.name != "active.cube" }
+                }.getOrNull() ?: continue
+                for (f in files.sortedBy { it.name.lowercase(Locale.US) }) {
+                    val cleanName = f.nameWithoutExtension.replace('_', ' ').trim()
+                    val key = cleanName.lowercase(Locale.US)
+                    if (seen.add(key)) {
+                        entries.add(LutFileEntry(id = f.absolutePath, name = cleanName, path = f.absolutePath))
+                    }
+                }
+            }
+            _state.update { it.copy(savedLuts = entries) }
         }
     }
 
@@ -602,13 +816,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
                 try {
+                    val cropped = cropBitmap(rendered, snapshot.crop)
                     val finalBitmap = if (snapshot.squarePic) {
-                        padToSquare(rendered)
+                        padToSquare(cropped, snapshot.squareBgStyle, snapshot.squareBlur)
                     } else {
-                        cropBitmap(rendered, snapshot.cropAspect, snapshot.cropZoom, snapshot.cropCenterX, snapshot.cropCenterY)
+                        cropped
                     }
                     withContext(Dispatchers.IO) { saveToGallery(finalBitmap) }
-                    if (finalBitmap !== rendered) finalBitmap.recycle()
+                    if (finalBitmap !== cropped) finalBitmap.recycle()
+                    if (cropped !== rendered) cropped.recycle()
                 } finally {
                     rendered.recycle()
                 }
@@ -622,6 +838,53 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
             }
+        }
+    }
+
+    fun share(onReady: (Uri) -> Unit) {
+        val snapshot = _state.value
+        val source = snapshot.source ?: return
+        if (snapshot.sharing || snapshot.saving) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(sharing = true) }
+            val outcome = runCatching {
+                val rendered = withContext(Dispatchers.Default) {
+                    PhotoRenderer.render(
+                        source = source,
+                        adjustments = snapshot.adjustments,
+                        look = snapshot.look,
+                        lookStrength = snapshot.lookStrength,
+                        light = snapshot.light,
+                        maxDim = 3000,
+                        lut = snapshot.lut,
+                        lutStrength = snapshot.lutStrength,
+                        subjectMask = snapshot.subjectMask,
+                        relightNormals = snapshot.relightNormals
+                    )
+                }
+                try {
+                    val cropped = cropBitmap(rendered, snapshot.crop)
+                    val finalBitmap = if (snapshot.squarePic) {
+                        padToSquare(cropped, snapshot.squareBgStyle, snapshot.squareBlur)
+                    } else {
+                        cropped
+                    }
+                    val shareUri = withContext(Dispatchers.IO) { saveToShareCache(finalBitmap) }
+                    if (finalBitmap !== cropped) finalBitmap.recycle()
+                    if (cropped !== rendered) cropped.recycle()
+                    shareUri
+                } finally {
+                    rendered.recycle()
+                }
+            }
+            _state.update {
+                it.copy(
+                    sharing = false,
+                    message = outcome.exceptionOrNull()?.let { err -> "Share failed: ${err.message}" }
+                )
+            }
+            outcome.getOrNull()?.let(onReady)
         }
     }
 
@@ -661,6 +924,16 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun decode(uri: Uri): LoadedPhoto {
+        val exifMap = LinkedHashMap<String, String>()
+        runCatching {
+            resolver.openInputStream(uri)?.use { stream ->
+                val exif = ExifInterface(stream)
+                for (tag in SAFE_EXIF_TAGS) {
+                    val v = exif.getAttribute(tag)
+                    if (!v.isNullOrBlank()) exifMap[tag] = v
+                }
+            }
+        }
         val source = ImageDecoder.createSource(resolver, uri)
         val bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             val longest = max(info.size.width, info.size.height)
@@ -675,7 +948,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             decoder.isMutableRequired = false
         }
         val name = queryDisplayName(uri) ?: "Untitled frame"
-        return LoadedPhoto(bitmap, name.take(48))
+        return LoadedPhoto(bitmap, name.take(48), exifMap)
     }
 
     private fun queryDisplayName(uri: Uri): String? {
@@ -707,45 +980,69 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun cropBitmap(
         source: Bitmap,
-        aspect: Float,
-        zoom: Float,
-        centerX: Float,
-        centerY: Float
+        crop: CropRect
     ): Bitmap {
-        if (aspect <= 0.01f || source.width < 2 || source.height < 2) return source
-        val safeZoom = zoom.coerceIn(1f, 3f)
-        // Largest rect of the target aspect that fits inside the source, then zoom into it.
-        val fitH = minOf(source.height.toFloat(), source.width / aspect)
-        val fitW = fitH * aspect
-        val w = (fitW / safeZoom).roundToInt().coerceIn(1, source.width)
-        val h = (fitH / safeZoom).roundToInt().coerceIn(1, source.height)
-        val left = ((centerX * source.width) - w / 2f).roundToInt().coerceIn(0, source.width - w)
-        val top = ((centerY * source.height) - h / 2f).roundToInt().coerceIn(0, source.height - h)
-        return Bitmap.createBitmap(source, left, top, w, h)
+        if (!crop.isCropped || source.width < 2 || source.height < 2) return source
+        val left = (crop.left.coerceIn(0f, 0.95f) * source.width).roundToInt().coerceIn(0, source.width - 1)
+        val top = (crop.top.coerceIn(0f, 0.95f) * source.height).roundToInt().coerceIn(0, source.height - 1)
+        val right = (crop.right.coerceIn(crop.left + 0.05f, 1f) * source.width).roundToInt().coerceIn(left + 1, source.width)
+        val bottom = (crop.bottom.coerceIn(crop.top + 0.05f, 1f) * source.height).roundToInt().coerceIn(top + 1, source.height)
+        val outW = (right - left).coerceAtLeast(1)
+        val outH = (bottom - top).coerceAtLeast(1)
+        if (kotlin.math.abs(crop.straighten) <= 0.05f) {
+            return Bitmap.createBitmap(source, left, top, outW, outH)
+        }
+        val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        val cx = left + outW * 0.5f
+        val cy = top + outH * 0.5f
+        val sZoom = straightenZoom(crop.straighten, outW.toFloat(), outH.toFloat())
+        val m = android.graphics.Matrix().apply {
+            postTranslate(-cx, -cy)
+            postRotate(crop.straighten)
+            postScale(sZoom, sZoom)
+            postTranslate(outW * 0.5f, outH * 0.5f)
+        }
+        canvas.drawBitmap(
+            source,
+            m,
+            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG or android.graphics.Paint.ANTI_ALIAS_FLAG)
+        )
+        return out
     }
 
-    /** SquarePic: fit the full frame into a square, blurred stretched copy fills the bars. */
-    private fun padToSquare(source: Bitmap): Bitmap {
+    /** SquarePic: fit the full frame into a square, with blurred or solid bars. */
+    private fun padToSquare(
+        source: Bitmap,
+        bgStyle: SquareBgStyle = SquareBgStyle.Blur,
+        blurStrength: Float = 0.75f
+    ): Bitmap {
         val side = maxOf(source.width, source.height)
         if (side == 0 || (source.width == side && source.height == side)) return source
         val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
         val c = android.graphics.Canvas(out)
-        // Blurred cover background: crop-fit to square, then heavy blur at 96 px.
-        val cover = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
-        val coverScale = maxOf(side.toFloat() / source.width, side.toFloat() / source.height)
-        val cw = source.width * coverScale
-        val ch = source.height * coverScale
-        val coverDst = android.graphics.RectF((side - cw) / 2f, (side - ch) / 2f, (side + cw) / 2f, (side + ch) / 2f)
-        android.graphics.Canvas(cover).drawBitmap(source, null, coverDst, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
-        val b1 = RelightMap.blurredCopy(cover, 96)
-        val b2 = RelightMap.blurredCopy(b1, 96)
-        val blurred = RelightMap.blurredCopy(b2, 96)
-        b1.recycle(); b2.recycle()
-        val stretched = Bitmap.createScaledBitmap(blurred, side, side, true)
-        c.drawBitmap(stretched, 0f, 0f, null)
-        if (stretched !== blurred) stretched.recycle()
-        blurred.recycle()
-        cover.recycle()
+        when (bgStyle) {
+            SquareBgStyle.Black -> c.drawColor(android.graphics.Color.BLACK)
+            SquareBgStyle.White -> c.drawColor(android.graphics.Color.WHITE)
+            SquareBgStyle.Blur -> {
+                val cover = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+                val coverScale = maxOf(side.toFloat() / source.width, side.toFloat() / source.height)
+                val cw = source.width * coverScale
+                val ch = source.height * coverScale
+                val coverDst = android.graphics.RectF((side - cw) / 2f, (side - ch) / 2f, (side + cw) / 2f, (side + ch) / 2f)
+                android.graphics.Canvas(cover).drawBitmap(source, null, coverDst, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+                val sampleDim = (180 - (blurStrength.coerceIn(0.15f, 1f) * 116f)).roundToInt().coerceIn(56, 180)
+                val b1 = RelightMap.blurredCopy(cover, sampleDim)
+                val b2 = RelightMap.blurredCopy(b1, sampleDim)
+                val blurred = RelightMap.blurredCopy(b2, sampleDim)
+                b1.recycle(); b2.recycle()
+                val stretched = Bitmap.createScaledBitmap(blurred, side, side, true)
+                c.drawBitmap(stretched, 0f, 0f, null)
+                if (stretched !== blurred) stretched.recycle()
+                blurred.recycle()
+                cover.recycle()
+            }
+        }
         val fitScale = minOf(
             side / source.width.toFloat(),
             side / source.height.toFloat()
@@ -777,6 +1074,19 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     error("JPEG encoder failed")
                 }
             }
+            if (settingsStore.preserveExif && sourceExif.isNotEmpty()) {
+                runCatching {
+                    resolver.openFileDescriptor(uri, "rw")?.use { pfd ->
+                        val exif = ExifInterface(pfd.fileDescriptor)
+                        for ((tag, value) in sourceExif) {
+                            exif.setAttribute(tag, value)
+                        }
+                        exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+                        exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Anatej Photo Editor")
+                        exif.saveAttributes()
+                    }
+                }
+            }
         } catch (t: Throwable) {
             resolver.delete(uri, null, null)
             throw t
@@ -786,6 +1096,28 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             put(MediaStore.Images.Media.IS_PENDING, 0)
         }
         resolver.update(uri, done, null, null)
+    }
+
+    private fun saveToShareCache(bitmap: Bitmap): Uri {
+        val dir = File(cacheDir, "shared").apply { mkdirs() }
+        val file = File(dir, "Anatej_Share.jpg")
+        file.outputStream().use { output ->
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, settingsStore.exportQuality, output)) {
+                error("JPEG encoder failed")
+            }
+        }
+        if (settingsStore.preserveExif && sourceExif.isNotEmpty()) {
+            runCatching {
+                val exif = ExifInterface(file)
+                for ((tag, value) in sourceExif) {
+                    exif.setAttribute(tag, value)
+                }
+                exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+                exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Anatej Photo Editor")
+                exif.saveAttributes()
+            }
+        }
+        return FileProvider.getUriForFile(getApplication(), "$packageName.fileprovider", file)
     }
 
     private fun loadPersistedLut() {
@@ -821,13 +1153,35 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val light: PortraitLight,
         val lut: Lut3D?,
         val lutName: String?,
-        val lutStrength: Float
+        val lutStrength: Float,
+        val crop: CropRect,
+        val squarePic: Boolean
     )
 
-    private data class LoadedPhoto(val bitmap: Bitmap, val name: String)
+    private data class LoadedPhoto(
+        val bitmap: Bitmap,
+        val name: String,
+        val exif: Map<String, String> = emptyMap()
+    )
 
     private companion object {
         const val MAX_DECODE_DIM = 2560
         const val THUMB_DIM = 144
+        val SAFE_EXIF_TAGS = listOf(
+            ExifInterface.TAG_DATETIME,
+            ExifInterface.TAG_DATETIME_ORIGINAL,
+            ExifInterface.TAG_DATETIME_DIGITIZED,
+            ExifInterface.TAG_MAKE,
+            ExifInterface.TAG_MODEL,
+            ExifInterface.TAG_F_NUMBER,
+            ExifInterface.TAG_EXPOSURE_TIME,
+            ExifInterface.TAG_ISO_SPEED_RATINGS,
+            ExifInterface.TAG_FOCAL_LENGTH,
+            ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM,
+            ExifInterface.TAG_WHITE_BALANCE,
+            ExifInterface.TAG_FLASH,
+            "LensMake",
+            "LensModel"
+        )
     }
 }

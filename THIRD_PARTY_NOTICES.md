@@ -25,3 +25,19 @@ Anatej Photo Editor bundles the following runtime components and model assets.
 
 - Licenses: Apache License 2.0
 - Projects: AndroidX, Jetpack Compose, Kotlin, Kotlin Coroutines.
+
+## Bundled / downloaded 3D LUTs
+
+The 45 `.cube` LUT files placed in `Download/LUTs/` on the device (and mirrored into the
+app's private `files/luts/` library) come from open-source collections. They are user data,
+not APK assets.
+
+| Collection | Source | License |
+| --- | --- | --- |
+| Spectral film-stock LUTs (Portra, Gold, Ektar, Kodachrome, Vision3, Pro 400H, Superia, Natura, Provia, Velvia, Tri-X, HP5, …) | [jeremieLouvaert/ComfyUI-Darkroom](https://github.com/jeremieLouvaert/ComfyUI-Darkroom) → `data/spectral_luts/`, built on [JanLohse/spectral_film_lut](https://github.com/JanLohse/spectral_film_lut) | MIT |
+| `slay-01 … slay-05` cinematic LUTs | [slaycamera/luts](https://github.com/slaycamera/luts) | CC BY 4.0 — credit **slay, slaycamera.com** |
+| Fujifilm Provia conversion LUTs (Classic Neg, Nostalgic Neg, Bleach Bypass) | [abpy/FujifilmCameraProfiles](https://github.com/abpy/FujifilmCameraProfiles) | Free to use with attribution |
+| Leica / Fuji standard LUTs | [shenmintao/V-Log-Alchemy](https://github.com/shenmintao/V-Log-Alchemy) | Free to use with attribution |
+
+If you redistribute the LUT files with a build, keep this attribution and the upstream
+licenses with them.

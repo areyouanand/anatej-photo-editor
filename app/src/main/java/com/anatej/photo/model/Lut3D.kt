@@ -10,7 +10,7 @@ class Lut3D(
     val data: FloatArray
 ) {
     init {
-        require(size in 2..64) { "Unsupported LUT size $size" }
+        require(size in 2..65) { "Unsupported LUT size $size" }
         require(data.size >= size * size * size * 3) {
             "LUT has ${data.size / 3} entries, expected ${size * size * size}"
         }

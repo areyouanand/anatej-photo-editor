@@ -1,35 +1,61 @@
 # Anatej Photo Editor — Handoff
 
-**Version:** 0.3.0 (versionCode 3)
-**Last updated:** 2026-11-06, after OPPO-style exposure-gain relight, Crop/Square Pic preview fix, and UI/toolbar cleanup
+**Version:** 0.4.0 (versionCode 4)
+**Last updated:** 2026-11-06, after interactive crop + straighten, adaptive preview, 31 multi-effect looks, dedicated 3D LUT library, EXIF preservation, share sheet, and tone sliders
 **Location:** `/mnt/1tb/AI stuff/FUJI Camera`
 **Platform:** Android 10+ (`minSdk 29`), built against API 36
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `5fb05aeea55b53931385db14e4cf14c9d47f39a4f67b154ec39dfb8ac6ea8148`
+**SHA-256:** `27226de55e7dacfeded4e0073def8ae3288c10c77189d702871ae78b1cb2e230`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
-**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841 and verified:
-1. **OPPO-style exposure-gain relight** — `RelightMap.layers()` and `PhotoRenderer` now multiply the subject's own pixel colours with soft highlight rolloff instead of Screen-blending a white veil, so dark hair stays dark and skin keeps contrast.
-2. **Crop & Square Pic preview fixes** — Crop dims the 4 outside strips instead of re-drawing/squeezing the image into the crop box; Square Pic renders a smooth 3-pass blurred square background and maps the fitted inner image rect so relight/bloom/vignette/grain align inside the square.
-3. **Preview & 6-tab toolbar UI cleanup** — removed floating chip clutter over the subject, moved zoom pill to bottom-right, hid light reticle outside the Light tab, added active pill highlight to the 6-tab toolbar, and reduced panel height to 296 dp so the preview has more room.
+**State:** latest 0.4.0 APK (SHA above) installed on the CPH2841 and verified:
+1. **Interactive gallery-style crop** — draggable L-corner + edge handles, inside-box pan, 7 aspect locks (`FREE`/`ORIG`/`1:1`/`4:5`/`3:2`/`16:9`/`9:16`), a ±45° **Straighten** slider with automatic inscribed zoom, Rotate 90°, Flip, and Reset. Leaving the CROP tab shows only the cropped region fitted to the preview (non-destructive).
+2. **Adaptive preview frame** — the preview card now sizes itself to the photo's aspect ratio (landscape, portrait, square, or the cropped ratio) instead of a fixed box with dead space; the CROP tab drops the card corner radius so corner handles are never clipped.
+3. **Multi-layered looks + dedicated 3D LUT library** — 31 stocks across `Cinema`, `Fujifilm`, `Kodak`, `Basic`, `Nikon & Leica`, `Hasselblad`, each carrying tone, split-tone, grain, bloom, halation, vignette and micro-sharpness; `3D LUT` is now its own series tab with 45 bundled/on-device `.cube` LUTs and multi-select import (`17³`/`33³`/`65³`).
+4. **Tone, metadata and sharing** — Highlights / Shadows / Whites / Blacks recovery sliders, EXIF preservation (GPS never copied) with a Settings toggle, a `↗` share button using `FileProvider`, and double-tap-to-reset on every slider.
 Emulator closed. Test media cleaned up.
 
 ---
 
 ## 0. Handoff snapshot
 
-This build covers the requested v0.3 scope:
+This build covers the v0.4 scope on top of v0.3:
 
 - Settings + About, with the theme selector moved off Home/Editor (gear is Home-only).
-- Undo/redo, offline library, real `.cube` LUTs, bundled offline segmentation.
+- Undo/redo (now including crop + straighten + Square Pic), offline library, real `.cube` LUTs,
+  bundled offline segmentation.
 - **Natural portrait relight** using MiDaS depth normals, feathered subject blending and a
   normals-derived shadow.
 - **Instant LUT previews for tone/look changes** because the LUT is baked once and the
   live grade runs through the GPU colour matrix.
 - **Zoom/pan** with pinch, one-finger pan and −/×/+ controls; **hold to compare**.
 
-Changes since the v0.2 handoff:
+### v0.4 change log
+
+| Area | What changed |
+| --- | --- |
+| Crop model | `CropRect(left, top, right, bottom, aspectLock, straighten)` replaces `cropAspect`/`cropZoom`/`cropCenterX`/`cropCenterY`. `isCropped` is true for any inset **or** any `|straighten| > 0.05°`. |
+| Crop interaction | Corner/edge hit-testing with a 34 dp radius; aspect-locked drags anchor on the opposite corner/edge; dragging inside the box moves it; outside the CROP tab the same gesture pans the fitted cropped view. |
+| Straighten | `-45°..+45°`, `straightenZoom()` computes the inscribed scale (transposition-symmetric, capped at 2.6×). Applied with `withTransform(rotate, scale)` in the preview and a real rotation matrix in `cropBitmap` for export. |
+| Adaptive preview | `PreviewArea` uses `BoxWithConstraints` to size the frame to the photo/crop/square aspect, clamped to a 140/160 dp minimum, so no black letterboxing remains. |
+| Looks | `Adjustments`/`Look` gained `sharpness`, `bloom`, `halation`, `shadowTint`, `highlightTint`; 6 stock series + 31 looks; preview renders split-tone via one extra matrix and halation through a warm matrix on the blurred overlay; export bakes halation in `applyEnhancements`. |
+| 3D LUT | `LookSeries.Lut` is a dedicated section. `Lut3D` accepts up to `65³`. `importLuts(List<Uri>)` imports multiple files, `refreshSavedLuts()` scans `files/luts/` **and** `Download/LUTs/`, and each LUT appears as a one-tap pill. |
+| Tone | New `highlights`, `shadows`, `whites`, `blacks` sliders (luminance-weighted recovery in export, slope/offset approximation in the preview matrix). |
+| EXIF | On import, 14 safe tags are captured (dates, make/model, aperture, shutter, ISO, focal length, white balance, flash, lens). Written to the exported JPEG and the share cache; `TAG_ORIENTATION` is normalised. GPS is never read. |
+| Share | `FileProvider` (`${applicationId}.fileprovider`, `res/xml/file_paths.xml` → `cache/shared/`), `share()` renders → caches → launches the system chooser. |
+| Sliders | Double-tap the label or track resets to the declared default (`ValueSlider(defaultValue = ...)`), with haptics. |
+
+Verification highlights: 18 unit tests green (`.cube` parsing incl. 65³, trilinear sampling,
+1D/incomplete rejection, crop/straighten geometry, tone-slider matrix behaviour, LUT series
+separation, Square Pic labels); `assembleDebug` and `lintDebug` green. On-device: a 960×540
+landscape photo renders in a 16:9 preview card, the CROP tab shows unclipped corner handles
+and the Straighten slider at +0.0°, the `3D LUT · CUBE` tab reports **45 LUTs available**, and
+a near-square crop shows `CROP · 1013 × 1013` with the cropped viewport on return to LOOKS.
+
+---
+
+### Earlier fixes still in force (v0.2 → v0.3)
 
 | Previous limitation / issue | Resolution |
 | --- | --- |
@@ -107,19 +133,47 @@ The editor header is reserved for back, undo/redo, and save.
 
 ### 3D LUT
 - Strict 3D `.cube` parser (`LUT_3D_SIZE`, RGB triples; rejects 1D/incomplete files).
+  Accepts sizes `2..65`, so `17³`, `33³` and `65³` files all load.
 - Trilinear sampling.
-- Import/remove from Looks, strength slider, persisted to
-  `files/luts/active.cube` and restored on launch.
+- **Dedicated `3D LUT · CUBE` series tab** in LOOKS (separate from the stock series). The
+  import block no longer appears under Cinema/Fujifilm/Kodak/Basic/Nikon/Hasselblad.
+- `IMPORT .CUBE` uses `OpenMultipleDocuments`; `importLuts()` writes every selected file to
+  `files/luts/<name>.cube` and makes the last one active.
+- `refreshSavedLuts()` merges `files/luts/` with `Download/LUTs/`, de-duplicates by display
+  name, and exposes each file as a one-tap pill.
+- **45 open-source 33³ LUTs ship on the device** in `/sdcard/Download/LUTs/` and are seeded
+  into `files/luts/` (spectral film stocks – Portra 160/400/800, Gold 200, Ektar 100,
+  Kodachrome 64, Vision3 50D/200T/250D/500T 2383/2393, Fuji Pro 400H, Superia X-Tra,
+  Natura 1600, Provia/Velvia, Tri-X/HP5; slay cinematic LUTs; Fujifilm Provia conversion
+  LUTs; Leica/Fuji standard LUTs).
+- Strength slider, persisted to `files/luts/active.cube` and restored on launch.
 - **Latency fix:** the LUT is baked into a 1280 px preview base **once per LUT/strength
   change**. Tone/look changes remain live GPU ColorMatrix operations. Export order is
   LUT → grade → relight → vignette/grain, matching the preview.
+
+### Crop, geometry and preview
+- `CropRect` is the single crop truth (normalised 0..1 plus `aspectLock` and `straighten`).
+- Interactive handles: 4 L-corners (accent), 4 edge bars (white), rule-of-thirds grid,
+  dimmed outside strips, inside-box drag to move, 34 dp hit radius.
+- Aspect locks: `FREE`, `ORIG`, `1:1`, `4:5`, `3:2`, `16:9`, `9:16`. Locked drags keep the
+  target ratio in normalised space (converted through the photo aspect).
+- Straighten `-45°..+45°` with `straightenZoom()` inscribed scaling in preview and export.
+- Rotate 90°, Flip Horizontal, Reset; all crop/straighten/square changes participate in
+  undo/redo via `EditSnapshot`.
+- Outside the CROP tab the preview shows only the cropped region, fitted to the frame; the
+  CROP tab reveals the full frame with the overlay.
+- `PreviewArea` is `BoxWithConstraints`-driven, so the preview card matches the photo,
+  crop or square aspect instead of a fixed rectangle.
 
 ### Settings + About
 - Appearance: Signature / M3 Expressive, applied immediately and persisted.
 - Scan on import (on/off; manual rescan in Auto panel).
 - Subject masking (on/off for subsequent imports).
-- About: version/build, processing pipeline, privacy, export behavior, credits, restore
-  defaults.
+- Export quality `70–100%` (default 95%).
+- **Preserve camera EXIF** (default on) — 14 safe tags copied onto export/share; GPS is
+  never read, orientation is normalised, software tag is set.
+- About: version/build, processing pipeline, privacy, export behavior, credits,
+  `@areyouanand`, GitHub link, restore defaults.
 - Settings gear appears only on Home.
 
 ### In-app library
@@ -166,6 +220,19 @@ The editor header is reserved for back, undo/redo, and save.
 | Square Pic (blurred bars) | Separate SQUARE tab: `padToSquare` fits the full frame into a square over a blurred stretched copy; preview shows the blurred bars. Verified as a 1920×1920 export. |
 | App-to-app sharing | Manifest SEND/SEND_MULTIPLE image filters; `MainActivity.sharedImageUri()` routes EXTRA_STREAM into the editor; `loadPhoto` decodes content URIs. |
 | Simple brighten | Light panel opens on one **Brighten face** slider (`EditorViewModel.brightenFace` auto-places on the subject and enables the key) + Auto-brighten; presets/direction pad/sliders sit behind **Advanced tools**. Display scale is 0–100, but the internal model maps it to `(intensity/100)·30%` of full relight — 100 behaves like the old 30% mark. |
+| Interactive crop | Draggable L-corner + edge handles with a 34 dp hit radius, inside-box pan, dimmed outer strips, rule-of-thirds grid. Verified on-device with a 960×540 frame; a 1:1 drag reported `CROP · 1013 × 1013`. |
+| Cropped viewport | Switching from CROP to LOOKS shows only the crop, fitted to the frame; returning to CROP restores the full frame plus overlay. |
+| Crop aspects | `FREE`/`ORIG`/`1:1`/`4:5`/`3:2`/`16:9`/`9:16` chips; locked drags preserve the ratio. |
+| Straighten | ±45° slider (`+0.0°` default, double-tap resets); inscribed zoom keeps corners filled in both preview and export. |
+| Rotate / Flip / Reset | `↻ 90°`, `⇄ Flip`, `Reset` row in the CROP panel, all undoable. |
+| Adaptive preview | 960×540 source renders in a 16:9 card with no dead space; portrait, square and cropped ratios each size the card accordingly. CROP tab removes the card corner radius so handles stay visible. |
+| Multi-effect looks | 31 looks across 6 series. `KODAK 2383`, `800T NIGHT`, `BLOCKBUSTER`, `PRO-MIST 1/4`, `BLEACH BYPASS`, `INDIE 35MM`, `SIN CITY NOIR`, `PORTRA 400`, `GOLD 200`, `EKTAR 100`, `TRI-X 400`, `ILFORD HP5`, `NOSTALGIC NEG`, `ETERNA CINE`, `LEICA CHROME`, `MONOCHROM`, `X2D STUDIO` etc. Each carries grain/bloom/halation/split-tone/vignette/matte; the panel prints the active recipe tags. |
+| 3D LUT section | `3D LUT · CUBE` is its own series chip; on-device it reported **45 LUTs available** from `Download/LUTs` + `files/luts`. Multi-select import, one-tap pills, strength slider default 100%. |
+| Tone sliders | Highlights / Shadows / Whites / Blacks added to ADJUST alongside Film halation and the two split-tone sliders. |
+| EXIF | Safe tags round-trip to export; GPS never read; toggle in Settings (default on). |
+| Share | `↗` button next to SAVE renders to `cache/shared/Anatej_Share.jpg`, exposes it through `${applicationId}.fileprovider`, and opens the system chooser with `FLAG_GRANT_READ_URI_PERMISSION`. |
+| Slider reset | Double-tap any slider label or track to return to its declared default, with haptics. |
+| Unit tests | 18 tests green: `.cube` parsing (incl. `65³`), trilinear endpoints, 1D/incomplete rejection, crop/straighten state, `straightenZoom` symmetry + ceiling, tone-slider matrix offsets, LUT series separation, Square Pic labels. |
 | Emulator | Stopped after the pass at the user's request; no emulator process/window remains |
 
 Test photos/LUT were pushed temporarily and deleted. The app was clean-installed after
@@ -183,8 +250,8 @@ app/src/main/java/com/anatej/photo/
 │   ├── SettingsStore.kt         SharedPreferences
 │   └── PhotoLibrary.kt          MediaStore query + permission helpers
 ├── model/
-│   ├── EditorModels.kt          adjustments, light, looks, analysis, UI state
-│   └── Lut3D.kt                 trilinear sampling
+│   ├── EditorModels.kt          adjustments, crop, light, looks, LUT entries, UI state
+│   └── Lut3D.kt                 trilinear sampling (2..65)
 ├── engine/
 │   ├── PhotoAnalyzer.kt         histogram + skin/saliency scan
 │   ├── PhotoRenderer.kt         CPU export; LUT/grade/normals/vignette/grain
@@ -216,8 +283,9 @@ echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Unit tests cover `.cube` parsing, trilinear sampling, 1D rejection and incomplete-LUT
-rejection.
+Unit tests cover `.cube` parsing (including `65³` tables), trilinear sampling, 1D rejection,
+incomplete-LUT rejection, crop/straighten geometry and `straightenZoom`, the tone-slider
+preview matrix, LUT-series separation and Square Pic labels — **18 tests**.
 
 Debug APK size is dominated by ML Kit native libraries for all ABIs. For distribution,
 next step is an App Bundle or ABI splits (`arm64-v8a` covers the test phone).
@@ -231,13 +299,14 @@ next step is an App Bundle or ABI splits (`arm64-v8a` covers the test phone).
    swapped behind `DepthEstimator` without touching the UI.
 2. **LUT strength still rebakes the 1280 px base** (~90 ms) when the strength slider moves.
    Tone/look sliders are immediate. A GPU AGSL sampler would remove even that.
-3. No crop/rotate, RAW decode, EXIF preservation, batch export, or session persistence
-   across process death.
-4. Library requires a runtime permission; SAF/system picker remain permission-free.
-5. Release packaging: shrink the 151 MB debug APK with ABI splits, enable R8 and a signed
+3. **Straighten is preview-cheap but export-costly** — the export path rotates a full
+   3000 px bitmap. Fine for single exports; a tile-based pass would help batch export.
+4. RAW decode, batch export, and session persistence across process death are still open.
+5. Library requires a runtime permission; SAF/system picker remain permission-free.
+6. Release packaging: shrink the 151 MB debug APK with ABI splits, enable R8 and a signed
    release config. The 33.5 MB depth model dominates.
-6. Optional polish: custom crop tool, split-tone/HSL, LUT gallery with multiple saved
-   LUTs, and a before/after hold gesture (compare chip exists).
+7. Optional polish: custom user presets ("My Looks"), film border/date stamp, and an HSL
+   panel next to the split-tone controls.
 
 ---
 
@@ -253,8 +322,21 @@ next step is an App Bundle or ABI splits (`arm64-v8a` covers the test phone).
   mask arrives; depth inference and segmentation run in parallel.
 - The depth model asset must remain uncompressed (`noCompress += "tflite"`) so it can be
   memory-mapped through `AssetFileDescriptor`.
-- Export must remain in the order: LUT → grade → normals light/shadow → vignette/grain.
-- The app is not a git repository yet; `local.properties` is ignored.
+- Export must remain in the order: LUT → grade → relight → vignette/grain.
+- Crop truth is `EditorUiState.crop` (`CropRect`). Any new geometry feature must update both
+  `EditorCanvas` (`fitRect` / `currentViewRect`) and `EditorViewModel.cropBitmap`.
+- `PreviewArea` sizes the frame from the photo/crop/square aspect. If you add a new frame
+  mode, extend the `targetAspect` `when` block, not the canvas.
+- Saved LUTs are merged from `files/luts/` and `Download/LUTs/` by
+  `EditorViewModel.refreshSavedLuts()`; the active LUT is also mirrored to
+  `files/luts/active.cube` so it survives a cold start.
+- EXIF is captured once at import (`sourceExif`) and written at export/share time. Never add
+  GPS tags to `SAFE_EXIF_TAGS`.
+- The share flow depends on the `${applicationId}.fileprovider` authority and
+  `res/xml/file_paths.xml` exposing `cache/shared/`; keep the cache file name stable or
+  update `saveToShareCache`.
+- The repository is now a git repo with `origin` at
+  `https://github.com/areyouanand/anatej-photo-editor`.
 
 ### Resume checklist
 
@@ -270,11 +352,10 @@ Suggested order for the next milestone:
 
 1. Release packaging: App Bundle + `arm64-v8a` split, R8, signed config.
 2. Session persistence (store the working bitmap in app cache + restore URI).
-3. Crop/rotate and EXIF preservation.
+3. HSL panel and user-saved custom presets.
 4. Optional: higher-resolution depth model or a face-mesh refinement behind
    `DepthEstimator`.
-5. Optional: GPU AGSL LUT sampler to remove the LUT-strength re-bake, and multiple saved
-   LUT slots.
+5. Optional: GPU AGSL LUT sampler to remove the LUT-strength re-bake.
 
 Avoid using the phone's private gallery for docs screenshots; the current `docs/` set only
 uses the public test portrait and UI chrome.
@@ -283,16 +364,18 @@ uses the public test portrait and UI chrome.
 
 ## 8. Current device state
 
-- Final 0.3.0 APK installed on the CPH2841 (`3B164J000QB00000`) with SHA above.
-  On-device checks passed: launcher label “Anatej Photo Editor”, no `INTERNET` or
-  `ACCESS_NETWORK_STATE` in `dumpsys package`, zoom reached 2.3×, one-finger pan moved the
-  frame, a 2.5 s hold showed ORIGINAL, and SAVE wrote a 1920×1080 JPEG to
-  `Pictures/Anatej` matching the preview (with the new softbox light applied). The new
-  Light panel opened with presets/AZ·EL pad, VIEW MASK tinted the subject orange, and
-  the PAN MODE toggle switched the gesture from light placement to pan.
+- Final 0.4.0 APK installed on the CPH2841 (`3B164J000QB00000`) with SHA above.
+  On-device checks passed: landscape 960×540 source in a 16:9 adaptive preview card,
+  unclipped crop corner handles with the Straighten slider at `+0.0°`, the dedicated
+  `3D LUT · CUBE` tab reporting **45 LUTs available**, and a near-square crop badge reading
+  `CROP · 1013 × 1013` with the cropped viewport shown on returning to LOOKS.
   No `FATAL EXCEPTION` for `com.anatej.photo` in logcat.
+- **45 `.cube` LUTs are stored at `/sdcard/Download/LUTs/`** on the phone and mirrored into
+  the app's private `files/luts/` library. They are open-source; see
+  `THIRD_PARTY_NOTICES.md` for attribution (spectral film LUTs MIT, slay CC BY 4.0,
+  FujifilmCameraProfiles and V-Log-Alchemy free-use).
 - The temporary test image and its test export were deleted from the phone after the pass.
-- Test media was written to app-private emulator storage only; the repo contains none.
+- Test media was written to app-private emulator/phone storage only; the repo contains none.
 - Library permission on the phone was reset by the clean install preceding v0.2; prompt
   will appear on first library use.
 - No internet permission in the manifest.

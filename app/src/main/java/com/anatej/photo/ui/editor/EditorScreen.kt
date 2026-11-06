@@ -1,5 +1,6 @@
 package com.anatej.photo.ui.editor
 
+import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,6 +12,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -56,6 +58,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
@@ -104,8 +107,9 @@ fun EditorScreen(
     val snackbar = remember { SnackbarHostState() }
     var showMask by rememberSaveable { mutableStateOf(false) }
     var gestureIsLight by rememberSaveable { mutableStateOf(true) }
-    val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(viewModel::importLut)
+    val context = LocalContext.current
+    val lutPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) viewModel.importLuts(uris)
     }
 
     LaunchedEffect(state.message) {
@@ -129,6 +133,18 @@ fun EditorScreen(
                     onBack = onBack,
                     onUndo = viewModel::undo,
                     onRedo = viewModel::redo,
+                    onShare = {
+                        viewModel.share { uri ->
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "image/jpeg"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            runCatching {
+                                context.startActivity(Intent.createChooser(send, "Share photograph"))
+                            }
+                        }
+                    },
                     onExport = viewModel::export
                 )
 
@@ -194,6 +210,7 @@ private fun EditorTopBar(
     onBack: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onShare: () -> Unit,
     onExport: () -> Unit
 ) {
     val t = LocalAnatej.current
@@ -236,11 +253,17 @@ private fun EditorTopBar(
             enabled = state.canRedo,
             onClick = onRedo
         )
+        GlyphButton(
+            glyph = "↗",
+            description = "Share",
+            enabled = !state.sharing && !state.saving && state.source != null,
+            onClick = onShare
+        )
         Spacer(Modifier.width(4.dp))
         AnatejButton(
             text = if (state.saving) "SAVING" else "SAVE",
             onClick = onExport,
-            enabled = !state.saving && state.source != null
+            enabled = !state.saving && !state.sharing && state.source != null
         )
     }
 }
@@ -282,18 +305,43 @@ private fun PreviewArea(
     modifier: Modifier = Modifier
 ) {
     val t = LocalAnatej.current
-    val shape = RoundedCornerShape(t.cardCorner)
+    val shape = RoundedCornerShape(if (cropEditable) 4.dp else t.cardCorner)
     var zoom by remember(state.source) { mutableFloatStateOf(1f) }
     var pan by remember(state.source) { mutableStateOf(Offset.Zero) }
     var holdCompare by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
-    Box(
-        modifier = modifier
-            .border(1.dp, t.line, shape)
-            .clip(shape)
-            .background(Color.Black)
+    val source = state.source
+    BoxWithConstraints(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
     ) {
-        val source = state.source
+        val frameModifier = if (source != null && source.width > 0 && source.height > 0 && maxWidth > 0.dp && maxHeight > 0.dp) {
+            val targetAspect = when {
+                state.squarePic && !(state.compare || holdCompare) -> 1f
+                !cropEditable && state.crop.isCropped && !(state.compare || holdCompare) ->
+                    ((state.crop.width * source.width) / (state.crop.height * source.height)).coerceIn(0.25f, 4f)
+                else -> (source.width.toFloat() / source.height.toFloat()).coerceIn(0.25f, 4f)
+            }
+            val containerAspect = maxWidth / maxHeight
+            val (frameW, frameH) = if (targetAspect >= containerAspect) {
+                maxWidth to (maxWidth / targetAspect).coerceIn(140.dp, maxHeight)
+            } else {
+                (maxHeight * targetAspect).coerceIn(160.dp, maxWidth) to maxHeight
+            }
+            Modifier
+                .size(frameW, frameH)
+                .border(1.dp, t.line, shape)
+                .clip(shape)
+                .background(Color.Black)
+        } else {
+            Modifier
+                .fillMaxSize()
+                .border(1.dp, t.line, shape)
+                .clip(shape)
+                .background(Color.Black)
+        }
+
+        Box(modifier = frameModifier) {
         if (source != null) {
             EditorCanvas(
                 bitmap = source,
@@ -309,12 +357,11 @@ private fun PreviewArea(
                 compare = state.compare || holdCompare,
                 lightEditable = lightEditable,
                 cropEditable = cropEditable,
+                crop = state.crop,
+                onCropChange = viewModel::updateCrop,
                 squarePic = state.squarePic,
-                cropAspect = state.cropAspect,
-                cropZoom = state.cropZoom,
-                cropCenterX = state.cropCenterX,
-                cropCenterY = state.cropCenterY,
-                onCropCenter = viewModel::setCropCenter,
+                squareBlur = state.squareBlur,
+                squareBgStyle = state.squareBgStyle,
                 showMask = showMask,
                 zoom = zoom,
                 pan = pan,
@@ -349,15 +396,19 @@ private fun PreviewArea(
             }
 
             val badge = when {
-                state.squarePic -> "SQUARE PIC"
-                state.cropAspect > 0.01f -> "CROP ACTIVE"
+                state.squarePic -> "SQUARE PIC · ${state.squareBgStyle.label}"
+                state.crop.isCropped -> {
+                    val cw = (state.crop.width * source.width).roundToInt()
+                    val ch = (state.crop.height * source.height).roundToInt()
+                    "CROP · $cw × $ch"
+                }
                 state.lut != null -> "${state.lutName ?: "LUT"} · ${(state.lutStrength * 100).roundToInt()}%"
                 state.look.id != Looks.Original.id -> "${state.look.name} · ${(state.lookStrength * 100).roundToInt()}%"
                 else -> "${source.width} × ${source.height}"
             }
             PreviewChip(
                 text = badge,
-                active = state.squarePic || state.cropAspect > 0.01f || state.lut != null || state.look.id != Looks.Original.id,
+                active = state.squarePic || state.crop.isCropped || state.lut != null || state.look.id != Looks.Original.id,
                 modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
             )
 
@@ -380,6 +431,7 @@ private fun PreviewArea(
             LoadingPreview()
         } else {
             EmptyPreview(onOpenPhoto)
+        }
         }
     }
 }
@@ -1089,57 +1141,98 @@ private fun MicroLabel(text: String) {
 @Composable
 private fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val t = LocalAnatej.current
-    val aspect = state.cropAspect
+    val crop = state.crop
+    val lock = crop.aspectLock
+    val source = state.source
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
-        Text(
-            text = "Crop for profile",
-            style = MaterialTheme.typography.titleLarge,
-            color = t.text
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            text = "Pick a square (1:1) for a WhatsApp profile picture, or another story size. Drag on the frame to reposition; pinch or use the slider to zoom. Export applies the crop.",
-            style = MaterialTheme.typography.bodySmall,
-            color = t.textDim
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PresetChip("OFF", aspect <= 0.01f) { viewModel.setCrop(0f) }
-            PresetChip("1:1", kotlin.math.abs(aspect - 1f) < 0.01f) { viewModel.setCrop(1f) }
-            PresetChip("4:5", kotlin.math.abs(aspect - 0.8f) < 0.01f) { viewModel.setCrop(0.8f) }
-            PresetChip("9:16", kotlin.math.abs(aspect - 0.5625f) < 0.01f) { viewModel.setCrop(0.5625f) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Crop & geometry",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = t.text
+                )
+                Text(
+                    text = "Drag corner or edge handles on the frame, or drag inside to pan. Switch tabs to preview the cropped frame.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.textDim
+                )
+            }
         }
-        Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PresetChip("16:9", kotlin.math.abs(aspect - 1.7778f) < 0.02f) { viewModel.setCrop(1.7778f) }
+        Spacer(Modifier.height(10.dp))
+        MicroLabel("ASPECT RATIO")
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            PresetChip("FREE", kotlin.math.abs(lock) < 0.01f) { viewModel.setCropAspect(0f) }
+            PresetChip("ORIG", lock < -0.5f) { viewModel.setCropAspect(-1f) }
+            PresetChip("1:1", kotlin.math.abs(lock - 1f) < 0.02f) { viewModel.setCropAspect(1f) }
+            PresetChip("4:5", kotlin.math.abs(lock - 0.8f) < 0.02f) { viewModel.setCropAspect(0.8f) }
+            PresetChip("3:2", kotlin.math.abs(lock - 1.5f) < 0.02f) { viewModel.setCropAspect(1.5f) }
+            PresetChip("16:9", kotlin.math.abs(lock - 1.7778f) < 0.03f) { viewModel.setCropAspect(1.7778f) }
+            PresetChip("9:16", kotlin.math.abs(lock - 0.5625f) < 0.02f) { viewModel.setCropAspect(0.5625f) }
+        }
+        Spacer(Modifier.height(10.dp))
+        ValueSlider(
+            label = "Straighten",
+            value = crop.straighten,
+            range = -45f..45f,
+            onChange = viewModel::setCropStraighten,
+            format = { String.format(Locale.US, "%+.1f°", it) },
+            compact = true,
+            defaultValue = 0f
+        )
+        Spacer(Modifier.height(6.dp))
+        MicroLabel("TRANSFORM")
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             AnatejButton(
-                text = "Reset crop",
-                onClick = viewModel::resetCrop,
+                text = "↻ 90°",
+                onClick = viewModel::rotate90,
                 modifier = Modifier.weight(1f),
                 filled = false
             )
+            AnatejButton(
+                text = "⇄ Flip",
+                onClick = viewModel::flipHorizontal,
+                modifier = Modifier.weight(1f),
+                filled = false
+            )
+            AnatejButton(
+                text = "Reset",
+                onClick = viewModel::resetCrop,
+                modifier = Modifier.weight(0.85f),
+                filled = false,
+                enabled = crop.isCropped || lock != 0f
+            )
         }
-        Spacer(Modifier.height(6.dp))
-        ValueSlider(
-            label = "Crop zoom",
-            value = state.cropZoom,
-            range = 1f..3f,
-            onChange = viewModel::setCropZoom,
-            format = { "${it.nf1()}×" },
-            enabled = aspect > 0.01f
-        )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(10.dp))
+        val sizeInfo = if (source != null) {
+            val cw = (crop.width * source.width).roundToInt()
+            val ch = (crop.height * source.height).roundToInt()
+            "$cw × $ch PX"
+        } else {
+            "FULL FRAME"
+        }
         MonoLabel(
-            text = when {
-                aspect <= 0.01f -> "NO CROP — FULL FRAME"
-                else -> {
-                    val target = if (kotlin.math.abs(aspect - 1f) < 0.01f) "864×864" else ""
-                    "CROP LIVE — TAP ● DRAG TO MOVE" + if (target.isNotEmpty()) " · $target" else ""
-                }
+            text = if (crop.isCropped) {
+                "ACTIVE CROP · $sizeInfo · NON-DESTRUCTIVE"
+            } else {
+                "FULL FRAME · $sizeInfo · DRAG HANDLES TO CROP"
             },
-            color = if (aspect > 0.01f) t.accent else t.textDim
+            color = if (crop.isCropped) t.accent else t.textDim
         )
     }
 }
@@ -1150,7 +1243,10 @@ private fun Float.nf1(): String = String.format(java.util.Locale.US, "%.1f", thi
 private fun SquarePicPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val t = LocalAnatej.current
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -1160,8 +1256,7 @@ private fun SquarePicPanel(state: EditorUiState, viewModel: EditorViewModel) {
                     color = t.text
                 )
                 Text(
-                    text = if (state.squarePic) "Full image centred in a square; blurred copy fills the empty bars."
-                    else "Fit the whole photo into a square with blurred bars.",
+                    text = "Fit the entire photo inside a 1:1 square frame without cutting anything off.",
                     style = MaterialTheme.typography.bodySmall,
                     color = t.textDim
                 )
@@ -1172,16 +1267,45 @@ private fun SquarePicPanel(state: EditorUiState, viewModel: EditorViewModel) {
             )
         }
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AnatejButton(
-                text = if (state.squarePic) "Disable Square Pic" else "Enable Square Pic",
-                onClick = { viewModel.setSquarePic(!state.squarePic) },
-                modifier = Modifier.fillMaxWidth()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MicroLabel("FRAME FILL")
+            Spacer(Modifier.weight(1f))
+            com.anatej.photo.model.SquareBgStyle.entries.forEach { style ->
+                PresetChip(
+                    name = style.label,
+                    selected = state.squareBgStyle == style,
+                    onClick = {
+                        if (!state.squarePic) viewModel.setSquarePic(true)
+                        viewModel.setSquareBgStyle(style)
+                    }
+                )
+            }
+        }
+        if (state.squareBgStyle == com.anatej.photo.model.SquareBgStyle.Blur) {
+            Spacer(Modifier.height(6.dp))
+            ValueSlider(
+                label = "Blur intensity",
+                value = state.squareBlur,
+                range = 0.15f..1f,
+                onChange = viewModel::setSquareBlur,
+                format = ::percent,
+                enabled = state.squarePic,
+                compact = true,
+                defaultValue = 0.75f
             )
         }
         Spacer(Modifier.height(8.dp))
+        AnatejButton(
+            text = if (state.squarePic) "Disable Square Pic" else "Enable Square Pic",
+            onClick = { viewModel.setSquarePic(!state.squarePic) },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(6.dp))
         MonoLabel(
-            text = if (state.squarePic) "LIVE — EXPORTED AS A SQUARE" else "OFF — EXPORT KEEPS THE FRAME",
+            text = if (state.squarePic) "LIVE · 1:1 SQUARE (${state.squareBgStyle.label} BARS)" else "OFF · EXPORT KEEPS ASPECT RATIO",
             color = if (state.squarePic) t.accent else t.textDim
         )
     }
@@ -1227,6 +1351,34 @@ private fun AdjustPanel(state: EditorUiState, viewModel: EditorViewModel) {
             value = adjustments.contrast,
             range = -1f..1f,
             onChange = { value -> viewModel.updateAdjustments("contrast") { it.copy(contrast = value) } },
+            format = ::signedPercent
+        )
+        ValueSlider(
+            label = "Highlights",
+            value = adjustments.highlights,
+            range = -1f..1f,
+            onChange = { value -> viewModel.updateAdjustments("highlights") { it.copy(highlights = value) } },
+            format = ::signedPercent
+        )
+        ValueSlider(
+            label = "Shadows",
+            value = adjustments.shadows,
+            range = -1f..1f,
+            onChange = { value -> viewModel.updateAdjustments("shadows") { it.copy(shadows = value) } },
+            format = ::signedPercent
+        )
+        ValueSlider(
+            label = "Whites",
+            value = adjustments.whites,
+            range = -1f..1f,
+            onChange = { value -> viewModel.updateAdjustments("whites") { it.copy(whites = value) } },
+            format = ::signedPercent
+        )
+        ValueSlider(
+            label = "Blacks",
+            value = adjustments.blacks,
+            range = -1f..1f,
+            onChange = { value -> viewModel.updateAdjustments("blacks") { it.copy(blacks = value) } },
             format = ::signedPercent
         )
         ValueSlider(
@@ -1278,6 +1430,27 @@ private fun AdjustPanel(state: EditorUiState, viewModel: EditorViewModel) {
             onChange = { value -> viewModel.updateAdjustments("bloom") { it.copy(bloom = value) } },
             format = ::percent
         )
+        ValueSlider(
+            label = "Film halation",
+            value = adjustments.halation,
+            range = 0f..1f,
+            onChange = { value -> viewModel.updateAdjustments("halation") { it.copy(halation = value) } },
+            format = ::percent
+        )
+        ValueSlider(
+            label = "Shadow tint (Teal ↔ Amber)",
+            value = adjustments.shadowTint,
+            range = -1f..1f,
+            onChange = { value -> viewModel.updateAdjustments("shadow-tint") { it.copy(shadowTint = value) } },
+            format = ::signedPercent
+        )
+        ValueSlider(
+            label = "Highlight tint (Cool ↔ Gold)",
+            value = adjustments.highlightTint,
+            range = -1f..1f,
+            onChange = { value -> viewModel.updateAdjustments("highlight-tint") { it.copy(highlightTint = value) } },
+            format = ::signedPercent
+        )
         Spacer(Modifier.height(10.dp))
     }
 }
@@ -1293,7 +1466,14 @@ private fun LooksPanel(
     val series = LookSeries.entries[seriesIndex.coerceIn(0, LookSeries.entries.lastIndex)]
 
     LaunchedEffect(state.look.series) {
-        seriesIndex = state.look.series.ordinal
+        if (series != LookSeries.Lut) {
+            seriesIndex = state.look.series.ordinal
+        }
+    }
+    LaunchedEffect(series) {
+        if (series == LookSeries.Lut) {
+            viewModel.refreshSavedLuts()
+        }
     }
 
     Column(
@@ -1321,98 +1501,137 @@ private fun LooksPanel(
 
         Spacer(Modifier.height(8.dp))
 
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(Looks.forSeries(series), key = { it.id }) { look ->
-                LookCard(
-                    look = look,
-                    thumbnail = state.thumbs[look.id],
-                    selected = state.look.id == look.id,
-                    onClick = { viewModel.setLook(look) }
+        if (series == LookSeries.Lut) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    MonoLabel("3D LUT · .CUBE", t.accent)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = state.lut?.let { "${state.lutName ?: it.title} · ${it.size}³" } ?: "Import or pick a .cube LUT",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = t.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (state.savedLuts.isNotEmpty()) "${state.savedLuts.size} LUTs available · tap a card or import from Downloads/LUTs"
+                        else "Select one or multiple 33³ / 65³ .cube files from Downloads/LUTs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.textDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SmallAction(
+                        text = "IMPORT .CUBE",
+                        onClick = onImportLut
+                    )
+                    if (state.lut != null) {
+                        SmallAction(
+                            text = "CLEAR",
+                            onClick = viewModel::clearLut
+                        )
+                    }
+                }
+            }
+
+            if (state.savedLuts.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(state.savedLuts, key = { it.id }) { entry ->
+                        val active = state.lut != null && (state.lutName.equals(entry.name, ignoreCase = true) || state.lut.title.equals(entry.name, ignoreCase = true))
+                        PresetChip(
+                            name = entry.name,
+                            selected = active,
+                            onClick = { viewModel.selectSavedLut(entry) }
+                        )
+                    }
+                }
+            }
+
+            if (state.lut != null) {
+                Spacer(Modifier.height(8.dp))
+                ValueSlider(
+                    label = "LUT strength",
+                    value = state.lutStrength,
+                    range = 0f..1f,
+                    onChange = viewModel::setLutStrength,
+                    format = ::percent,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                    defaultValue = 1f
                 )
             }
-        }
-
-        Spacer(Modifier.height(6.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = state.look.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = t.text
-                )
-                Text(
-                    text = state.look.note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = t.textDim,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+        } else {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(Looks.forSeries(series), key = { it.id }) { look ->
+                    LookCard(
+                        look = look,
+                        thumbnail = state.thumbs[look.id],
+                        selected = state.look.id == look.id,
+                        onClick = { viewModel.setLook(look) }
+                    )
+                }
             }
+
+            Spacer(Modifier.height(6.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = state.look.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = t.text
+                    )
+                    Text(
+                        text = state.look.note,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.textDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val recipeTags = buildList {
+                        if (state.look.grain > 0.01f) add("GRAIN")
+                        if (state.look.bloom > 0.01f) add("BLOOM")
+                        if (state.look.halation > 0.01f) add("HALATION")
+                        if (kotlin.math.abs(state.look.shadowTint) > 0.01f || kotlin.math.abs(state.look.highlightTint) > 0.01f) add("SPLIT-TONE")
+                        if (state.look.vignette > 0.01f) add("VIGNETTE")
+                        if (state.look.fade > 0.01f) add("MATTE")
+                    }
+                    if (recipeTags.isNotEmpty()) {
+                        Spacer(Modifier.height(2.dp))
+                        MonoLabel(recipeTags.joinToString(" · "), t.accent.copy(alpha = 0.85f))
+                    }
+                }
+                if (state.look.id != Looks.Original.id) {
+                    MonoLabel("${(state.lookStrength * 100).roundToInt()}%", t.accent)
+                }
+            }
+
             if (state.look.id != Looks.Original.id) {
-                MonoLabel("${(state.lookStrength * 100).roundToInt()}%", t.accent)
-            }
-        }
-
-        if (state.look.id != Looks.Original.id) {
-            ValueSlider(
-                label = "Stock strength",
-                value = state.lookStrength,
-                range = 0f..1f,
-                onChange = viewModel::setLookStrength,
-                format = ::percent,
-                modifier = Modifier.padding(horizontal = 18.dp)
-            )
-        }
-
-        Spacer(Modifier.height(8.dp))
-        Hairline(t.line.copy(alpha = 0.7f), Modifier.padding(horizontal = 18.dp))
-        Spacer(Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                MonoLabel("3D LUT", t.accent)
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = state.lut?.let { "${it.title} · ${it.size}³" } ?: "Import a .cube LUT",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = t.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = if (state.lut != null) "Applied after the grade" else "33³ / 17³ .cube · applied after the grade",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = t.textDim,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                ValueSlider(
+                    label = "Stock strength",
+                    value = state.lookStrength,
+                    range = 0f..1f,
+                    onChange = viewModel::setLookStrength,
+                    format = ::percent,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                    defaultValue = 1f
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            SmallAction(
-                text = if (state.lut == null) "IMPORT .CUBE" else "REMOVE",
-                onClick = if (state.lut == null) onImportLut else viewModel::clearLut
-            )
-        }
-
-        if (state.lut != null) {
-            ValueSlider(
-                label = "LUT strength",
-                value = state.lutStrength,
-                range = 0f..1f,
-                onChange = viewModel::setLutStrength,
-                format = ::percent,
-                modifier = Modifier.padding(horizontal = 18.dp)
-            )
         }
 
         Spacer(Modifier.height(12.dp))

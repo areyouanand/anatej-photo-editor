@@ -58,6 +58,8 @@ fun SettingsScreen(
     onSubjectMaskingChange: (Boolean) -> Unit,
     exportQuality: Int,
     onExportQualityChange: (Int) -> Unit,
+    preserveExif: Boolean = true,
+    onPreserveExifChange: (Boolean) -> Unit = {},
     onBack: () -> Unit,
     onRestoreDefaults: () -> Unit
 ) {
@@ -149,6 +151,13 @@ fun SettingsScreen(
                 body = "Constrain portrait light to the detected person using the bundled segmentation model.",
                 checked = subjectMasking,
                 onCheckedChange = onSubjectMaskingChange
+            )
+            Hairline(t.line.copy(alpha = 0.7f))
+            SettingRow(
+                title = "Preserve camera EXIF",
+                body = "Keep camera, lens, exposure and capture date metadata in exported JPEGs (GPS is never copied).",
+                checked = preserveExif,
+                onCheckedChange = onPreserveExifChange
             )
             Hairline(t.line.copy(alpha = 0.7f))
             Spacer(Modifier.height(4.dp))

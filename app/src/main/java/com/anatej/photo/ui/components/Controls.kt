@@ -292,18 +292,33 @@ fun ValueSlider(
     format: (Float) -> String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    compact: Boolean = false
+    compact: Boolean = false,
+    defaultValue: Float = if (0f in range) 0f else range.start
 ) {
     val t = LocalAnatej.current
     val expressive = t.mode == DesignMode.Expressive
     val haptics = LocalHapticFeedback.current
     var lastDetent by remember { mutableStateOf(0) }
+    var lastTapUpMs by remember { mutableStateOf(0L) }
     val start = range.start
     val end = range.endInclusive
     val trackHeight = if (compact) 24.dp else 30.dp
 
     Column(modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.4f)) {
-        Row(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled) {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastTapUpMs < 350L) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onChange(defaultValue)
+                        lastTapUpMs = 0L
+                    } else {
+                        lastTapUpMs = now
+                    }
+                }
+        ) {
             Text(
                 label,
                 style = if (expressive) {
@@ -330,7 +345,7 @@ fun ValueSlider(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(trackHeight)
-                .pointerInput(start, end, enabled) {
+                .pointerInput(start, end, enabled, defaultValue) {
                     if (!enabled) return@pointerInput
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -351,15 +366,29 @@ fun ValueSlider(
                         // Vertical drags are left unconsumed so the surrounding panel
                         // can scroll even when the finger starts on a slider.
                         var horizontal = false
+                        var moved = false
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) break
+                            if (!change.pressed) {
+                                if (!moved) {
+                                    val now = android.os.SystemClock.elapsedRealtime()
+                                    if (now - lastTapUpMs < 320L) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onChange(defaultValue)
+                                        lastTapUpMs = 0L
+                                    } else {
+                                        lastTapUpMs = now
+                                    }
+                                }
+                                break
+                            }
                             val dx = change.position.x - down.position.x
                             val dy = change.position.y - down.position.y
                             if (!horizontal) {
                                 val slop = viewConfiguration.touchSlop
                                 if (dx * dx + dy * dy >= slop * slop) {
+                                    moved = true
                                     if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
                                         horizontal = true
                                         change.consume()

@@ -38,6 +38,10 @@ object PhotoRenderer {
         val stock = look.scaled(lookStrength)
         val exposure = (adjustments.exposure + stock.exposure).coerceIn(-3f, 3f)
         val contrast = (adjustments.contrast + stock.contrast).coerceIn(-0.95f, 1f)
+        val highlights = adjustments.highlights.coerceIn(-1f, 1f)
+        val shadows = adjustments.shadows.coerceIn(-1f, 1f)
+        val whites = adjustments.whites.coerceIn(-1f, 1f)
+        val blacks = adjustments.blacks.coerceIn(-1f, 1f)
         val saturation = (adjustments.saturation + stock.saturation).coerceIn(-1f, 1f)
         val warmth = (adjustments.warmth + stock.warmth).coerceIn(-1f, 1f)
         val fade = (adjustments.fade + stock.fade).coerceIn(0f, 1f)
@@ -45,6 +49,9 @@ object PhotoRenderer {
         val grain = (adjustments.grain + stock.grain).coerceIn(0f, 1f)
         val sharpness = (adjustments.sharpness + stock.sharpness).coerceIn(-1f, 1f)
         val bloom = (adjustments.bloom + stock.bloom).coerceIn(0f, 1f)
+        val halation = (adjustments.halation + stock.halation).coerceIn(0f, 1f)
+        val shadowTint = (adjustments.shadowTint + stock.shadowTint).coerceIn(-1f, 1f)
+        val highlightTint = (adjustments.highlightTint + stock.highlightTint).coerceIn(-1f, 1f)
 
         val out = scaleBitmap(source, maxDim)
         val w = out.width
@@ -60,6 +67,15 @@ object PhotoRenderer {
         val saturationScale = (1f + saturation).coerceIn(0f, 2.2f)
         val fadeScale = 1f - fade * 0.34f
         val fadeLift = fade * 23f
+        val sr = shadowTint * 20f
+        val sg = -shadowTint * 4f
+        val sb = -shadowTint * 22f
+        val hr = highlightTint * 24f
+        val hg = highlightTint * 7f
+        val hb = -highlightTint * 24f
+        val splitRScale = 1f + (hr - sr) / 255f
+        val splitGScale = 1f + (hg - sg) / 255f
+        val splitBScale = 1f + (hb - sb) / 255f
 
         val lightOn = bakeEffects && light.enabled && light.intensity > 0.001f
         val activeLut = if (lutStrength > 0.001f) lut else null
@@ -130,6 +146,21 @@ object PhotoRenderer {
                 g = (g - 127.5f) * contrastScale + 127.5f
                 b = (b - 127.5f) * contrastScale + 127.5f
 
+                // Highlights, shadows, whites & blacks recovery
+                if (highlights != 0f || shadows != 0f || whites != 0f || blacks != 0f) {
+                    val nl = ((0.2126f * r + 0.7152f * g + 0.0722f * b) / 255f).coerceIn(0f, 1f)
+                    val invNl = 1f - nl
+                    val shW = invNl * invNl
+                    val hiW = nl * nl
+                    val blkW = shW * invNl
+                    val whtW = hiW * nl
+                    val toneDelta = shadows * 46f * shW + highlights * 46f * hiW +
+                        blacks * 34f * blkW + whites * 34f * whtW
+                    r += toneDelta
+                    g += toneDelta
+                    b += toneDelta
+                }
+
                 // Saturation
                 val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
                 r = lum + (r - lum) * saturationScale
@@ -140,6 +171,11 @@ object PhotoRenderer {
                 r = r * fadeScale + fadeLift
                 g = g * fadeScale + fadeLift
                 b = b * fadeScale + fadeLift
+
+                // Split-toning (shadow/highlight tint)
+                r = r * splitRScale + sr
+                g = g * splitGScale + sg
+                b = b * splitBScale + sb
 
                 if (lightOn) {
                     val maskValue: Float
@@ -214,8 +250,8 @@ object PhotoRenderer {
             }
         }
 
-        if (bakeEffects && (sharpness > 0.01f || sharpness < -0.01f || bloom > 0.01f)) {
-            applyEnhancements(pixels, w, h, sharpness, bloom)
+        if (bakeEffects && (sharpness > 0.01f || sharpness < -0.01f || bloom > 0.01f || halation > 0.01f)) {
+            applyEnhancements(pixels, w, h, sharpness, bloom, halation)
         }
 
         out.setPixels(pixels, 0, w, 0, 0, w, h)
@@ -229,9 +265,15 @@ object PhotoRenderer {
         val stock = look.scaled(lookStrength)
         val exposure = (adjustments.exposure + stock.exposure).coerceIn(-3f, 3f)
         val contrast = (adjustments.contrast + stock.contrast).coerceIn(-0.95f, 1f)
+        val highlights = adjustments.highlights.coerceIn(-1f, 1f)
+        val shadows = adjustments.shadows.coerceIn(-1f, 1f)
+        val whites = adjustments.whites.coerceIn(-1f, 1f)
+        val blacks = adjustments.blacks.coerceIn(-1f, 1f)
         val saturation = (adjustments.saturation + stock.saturation).coerceIn(-1f, 1f)
         val warmth = (adjustments.warmth + stock.warmth).coerceIn(-1f, 1f)
         val fade = (adjustments.fade + stock.fade).coerceIn(0f, 1f)
+        val shadowTint = (adjustments.shadowTint + stock.shadowTint).coerceIn(-1f, 1f)
+        val highlightTint = (adjustments.highlightTint + stock.highlightTint).coerceIn(-1f, 1f)
 
         val gain = 2f.pow(exposure)
         val rg = gain * (1f + warmth * 0.18f)
@@ -240,6 +282,15 @@ object PhotoRenderer {
         val contrastScale = 1f + contrast * 0.9f
         val fadeScale = 1f - fade * 0.34f
         val fadeLift = fade * 23f
+        val sr = shadowTint * 20f
+        val sg = -shadowTint * 4f
+        val sb = -shadowTint * 22f
+        val hr = highlightTint * 24f
+        val hg = highlightTint * 7f
+        val hb = -highlightTint * 24f
+        val splitRScale = 1f + (hr - sr) / 255f
+        val splitGScale = 1f + (hg - sg) / 255f
+        val splitBScale = 1f + (hb - sb) / 255f
 
         val gainMatrix = floatArrayOf(
             rg, 0f, 0f, 0f, 0f,
@@ -252,6 +303,15 @@ object PhotoRenderer {
             contrastScale, 0f, 0f, 0f, offset,
             0f, contrastScale, 0f, 0f, offset,
             0f, 0f, contrastScale, 0f, offset,
+            0f, 0f, 0f, 1f, 0f
+        )
+        val toneLow = shadows * 32f + blacks * 28f
+        val toneHigh = highlights * 32f + whites * 28f
+        val toneSlope = 1f + (toneHigh - toneLow) / 255f
+        val toneMatrix = floatArrayOf(
+            toneSlope, 0f, 0f, 0f, toneLow,
+            0f, toneSlope, 0f, 0f, toneLow,
+            0f, 0f, toneSlope, 0f, toneLow,
             0f, 0f, 0f, 1f, 0f
         )
         val sat = saturation.coerceIn(-1f, 1f) + 1f
@@ -271,12 +331,20 @@ object PhotoRenderer {
             0f, 0f, fadeScale, 0f, fadeLift,
             0f, 0f, 0f, 1f, 0f
         )
+        val splitMatrix = floatArrayOf(
+            splitRScale, 0f, 0f, 0f, sr,
+            0f, splitGScale, 0f, 0f, sg,
+            0f, 0f, splitBScale, 0f, sb,
+            0f, 0f, 0f, 1f, 0f
+        )
 
         var result = identity()
         result = concat(result, gainMatrix)
         result = concat(result, contrastMatrix)
+        result = concat(result, toneMatrix)
         result = concat(result, saturationMatrix)
         result = concat(result, fadeMatrix)
+        result = concat(result, splitMatrix)
         return result
     }
 
@@ -302,13 +370,14 @@ object PhotoRenderer {
         return result
     }
 
-    /** Unsharp mask + highlight bloom on the baked pixel buffer. */
+    /** Unsharp mask + highlight bloom + red-orange film halation on the baked pixel buffer. */
     private fun applyEnhancements(
         pixels: IntArray,
         w: Int,
         h: Int,
         sharpness: Float,
-        bloom: Float
+        bloom: Float,
+        halation: Float
     ) {
         val r = FloatArray(w * h)
         val g = FloatArray(w * h)
@@ -322,9 +391,9 @@ object PhotoRenderer {
         val br = blurChannel(r, w, h, 2)
         val bg = blurChannel(g, w, h, 2)
         val bb = blurChannel(b, w, h, 2)
-        val cr = blurChannel(br, w, h, 2)
-        val cg = blurChannel(bg, w, h, 2)
-        val cb = blurChannel(bb, w, h, 2)
+        val cr = blurChannel(br, w, h, 3)
+        val cg = blurChannel(bg, w, h, 3)
+        val cb = blurChannel(bb, w, h, 3)
         for (i in pixels.indices) {
             var ro = r[i]; var go = g[i]; var bo = b[i]
             if (sharpness > 0.01f) {
@@ -345,6 +414,14 @@ object PhotoRenderer {
                 ro += cr[i] * weight
                 go += cg[i] * weight
                 bo += cb[i] * weight
+            }
+            if (halation > 0.01f) {
+                // Red-orange film base scatter around bright highlights.
+                val hl = (0.2126f * cr[i] + 0.7152f * cg[i] + 0.0722f * cb[i]) / 255f
+                val hw = halation * 0.56f * (hl * hl)
+                ro += cr[i] * hw * 1.15f
+                go += cg[i] * hw * 0.36f
+                bo += cb[i] * hw * 0.06f
             }
             pixels[i] = (0xFF shl 24) or (ro.roundToInt().coerceIn(0, 255) shl 16) or
                 (go.roundToInt().coerceIn(0, 255) shl 8) or bo.roundToInt().coerceIn(0, 255)

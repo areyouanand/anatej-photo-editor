@@ -44,6 +44,7 @@ fun AnatejApp(pendingUri: MutableState<Uri?>? = null) {
     var scanOnImport by remember { mutableStateOf(settings.scanOnImport) }
     var subjectMasking by remember { mutableStateOf(settings.subjectMasking) }
     var exportQuality by remember { mutableStateOf(settings.exportQuality) }
+    var preserveExif by remember { mutableStateOf(settings.preserveExif) }
 
     var screen by rememberSaveable { mutableStateOf("home") }
     var returnScreen by rememberSaveable { mutableStateOf("home") }
@@ -125,6 +126,11 @@ fun AnatejApp(pendingUri: MutableState<Uri?>? = null) {
                             exportQuality = value
                             settings.exportQuality = value
                         },
+                        preserveExif = preserveExif,
+                        onPreserveExifChange = { value ->
+                            preserveExif = value
+                            settings.preserveExif = value
+                        },
                         onBack = { screen = returnScreen },
                         onRestoreDefaults = {
                             settings.restoreDefaults()
@@ -132,6 +138,7 @@ fun AnatejApp(pendingUri: MutableState<Uri?>? = null) {
                             scanOnImport = settings.scanOnImport
                             subjectMasking = settings.subjectMasking
                             exportQuality = settings.exportQuality
+                            preserveExif = settings.preserveExif
                         }
                     )
 
