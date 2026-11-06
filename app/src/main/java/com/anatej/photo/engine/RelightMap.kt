@@ -227,7 +227,9 @@ object RelightMap {
             g[i] = ((c shr 8) and 0xFF).toFloat()
             b[i] = (c and 0xFF).toFloat()
         }
-        val br = blurR(r, w, h, 3); val bg = blurR(g, w, h, 3); val bb = blurR(b, w, h, 3)
+        val br = blurR(blurR(blurR(r, w, h, 5), w, h, 5), w, h, 5)
+        val bg = blurR(blurR(blurR(g, w, h, 5), w, h, 5), w, h, 5)
+        val bb = blurR(blurR(blurR(b, w, h, 5), w, h, 5), w, h, 5)
         val out = IntArray(w * h)
         for (i in out.indices) out[i] = (0xFF shl 24) or (br[i].roundToInt().coerceIn(0, 255) shl 16) or (bg[i].roundToInt().coerceIn(0, 255) shl 8) or bb[i].roundToInt().coerceIn(0, 255)
         return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
@@ -379,7 +381,7 @@ object RelightMap {
      * Renders an additive warm-light layer (BlendMode.Screen) and a multiplicative shadow
      * layer (BlendMode.Multiply), both sampled from [normals].
      */
-    fun layers(normals: Bitmap, light: PortraitLight): RelightLayers? {
+    fun layers(normals: Bitmap, light: PortraitLight, source: Bitmap? = null): RelightLayers? {
         if (!light.enabled || light.intensity <= 0.001f) return null
         val w = normals.width
         val h = normals.height
@@ -387,6 +389,13 @@ object RelightMap {
 
         val pixels = IntArray(w * h)
         normals.getPixels(pixels, 0, w, 0, 0, w, h)
+        val srcPixels = source?.let {
+            val scaled = if (it.width == w && it.height == h) it else Bitmap.createScaledBitmap(it, w, h, true)
+            IntArray(w * h).also { buf ->
+                scaled.getPixels(buf, 0, w, 0, 0, w, h)
+                if (scaled !== it) scaled.recycle()
+            }
+        }
         val lightOut = IntArray(w * h)
         val shadowOut = IntArray(w * h)
 
@@ -421,7 +430,28 @@ object RelightMap {
                 val amount = (sample.light + sample.spec).coerceIn(0f, 1f)
                 val alpha = (amount * 255f).roundToInt()
                 if (alpha > 0) {
-                    lightOut[index] = (alpha shl 24) or (warmR shl 16) or (warmG shl 8) or warmB
+                    if (srcPixels != null) {
+                        // OPPO-style relight: brighten the pixel's own colour (exposure gain
+                        // + soft highlight rolloff), so dark hair stays dark and skin keeps
+                        // its contrast instead of being washed with a white veil.
+                        val sp = srcPixels[index]
+                        val sr = ((sp shr 16) and 0xFF).toFloat()
+                        val sg = ((sp shr 8) and 0xFF).toFloat()
+                        val sb = (sp and 0xFF).toFloat()
+                        val gain = 1f + amount * 2.1f
+                        var lr = sr * gain * (warmR / 255f)
+                        var lg = sg * gain * (warmG / 255f)
+                        var lb = sb * gain * (warmB / 255f)
+                        lr = (lr * 255f) / (255f + (lr - sr).coerceAtLeast(0f) * 0.45f)
+                        lg = (lg * 255f) / (255f + (lg - sg).coerceAtLeast(0f) * 0.45f)
+                        lb = (lb * 255f) / (255f + (lb - sb).coerceAtLeast(0f) * 0.45f)
+                        val ri = lr.roundToInt().coerceIn(0, 255)
+                        val gi = lg.roundToInt().coerceIn(0, 255)
+                        val bi = lb.roundToInt().coerceIn(0, 255)
+                        lightOut[index] = (alpha shl 24) or (ri shl 16) or (gi shl 8) or bi
+                    } else {
+                        lightOut[index] = (alpha shl 24) or (warmR shl 16) or (warmG shl 8) or warmB
+                    }
                 }
 
                 val shadeAlpha = (sample.shade * 255f).roundToInt()

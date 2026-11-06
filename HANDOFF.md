@@ -1,18 +1,18 @@
 # Anatej Photo Editor — Handoff
 
 **Version:** 0.3.0 (versionCode 3)
-**Last updated:** 2026-11-06, after crop grid fix + Square Pic blurred-bar mode
+**Last updated:** 2026-11-06, after OPPO-style exposure-gain relight, Crop/Square Pic preview fix, and UI/toolbar cleanup
 **Location:** `/mnt/1tb/AI stuff/FUJI Camera`
 **Platform:** Android 10+ (`minSdk 29`), built against API 36
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `a14ea91faaf3367acbc9bc93b4fe7744cb9f397ee9ecf5d7ff802d92081a4741`
+**SHA-256:** `5fb05aeea55b53931385db14e4cf14c9d47f39a4f67b154ec39dfb8ac6ea8148`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
-**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841 and verified: fixed the
-crop grid to fit inside the frame, renamed the crop chip to **1:1**, and added a separate
-**SQUARE PIC** tab (full image centred in a square with blurred bars). Square Pic export
-is a true **1920×1920** JPEG with the fit math fixed. Sharing via SEND verified.
+**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841 and verified:
+1. **OPPO-style exposure-gain relight** — `RelightMap.layers()` and `PhotoRenderer` now multiply the subject's own pixel colours with soft highlight rolloff instead of Screen-blending a white veil, so dark hair stays dark and skin keeps contrast.
+2. **Crop & Square Pic preview fixes** — Crop dims the 4 outside strips instead of re-drawing/squeezing the image into the crop box; Square Pic renders a smooth 3-pass blurred square background and maps the fitted inner image rect so relight/bloom/vignette/grain align inside the square.
+3. **Preview & 6-tab toolbar UI cleanup** — removed floating chip clutter over the subject, moved zoom pill to bottom-right, hid light reticle outside the Light tab, added active pill highlight to the 6-tab toolbar, and reduced panel height to 296 dp so the preview has more room.
 Emulator closed. Test media cleaned up.
 
 ---

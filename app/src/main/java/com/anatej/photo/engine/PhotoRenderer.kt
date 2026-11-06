@@ -165,9 +165,16 @@ object PhotoRenderer {
                     val sample = RelightMap.sampleLight(nx, ny, nz, maskValue, dx, dy, light)
                     val amount = (sample.light + sample.spec).coerceIn(0f, 1f)
                     if (amount > 0.002f) {
-                        r += (255f - r) * amount * lr
-                        g += (255f - g) * amount * lg
-                        b += (255f - b) * amount * lb
+                        val gain = 1f + amount * 2.1f
+                        val tr = r * gain * lr
+                        val tg = g * gain * lg
+                        val tb = b * gain * lb
+                        val ro = (tr * 255f) / (255f + (tr - r).coerceAtLeast(0f) * 0.45f)
+                        val go = (tg * 255f) / (255f + (tg - g).coerceAtLeast(0f) * 0.45f)
+                        val bo = (tb * 255f) / (255f + (tb - b).coerceAtLeast(0f) * 0.45f)
+                        r += (ro - r) * amount
+                        g += (go - g) * amount
+                        b += (bo - b) * amount
                     }
                     if (sample.shade > 0.002f) {
                         val shade = sample.shade

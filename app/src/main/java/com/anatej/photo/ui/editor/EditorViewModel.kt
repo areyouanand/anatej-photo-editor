@@ -234,7 +234,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         overlayJob?.cancel()
         overlayJob = viewModelScope.launch {
             delay(16)
-            val layers = withContext(Dispatchers.Default) { RelightMap.layers(normals, light) }
+            val layers = withContext(Dispatchers.Default) { RelightMap.layers(normals, light, snapshot.lutPreview ?: snapshot.source) }
             if (generation == overlayGeneration) {
                 _state.update {
                     it.copy(
@@ -251,7 +251,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val source = snapshot.source
         val bloom = (snapshot.adjustments.bloom + snapshot.look.scaled(snapshot.lookStrength).bloom)
         val sharpness = (snapshot.adjustments.sharpness + snapshot.look.scaled(snapshot.lookStrength).sharpness)
-        if (source == null || (bloom <= 0.01f && sharpness <= 0.01f)) {
+        if (source == null || (bloom <= 0.01f && sharpness <= 0.01f && !snapshot.squarePic)) {
             if (snapshot.bloomOverlay != null) _state.update { it.copy(bloomOverlay = null) }
             return
         }
@@ -452,6 +452,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun setSquarePic(enabled: Boolean) {
         record("square-pic", force = true)
         _state.update { it.copy(squarePic = enabled) }
+        scheduleBlurOverlay()
     }
 
     fun resetCrop() {
@@ -729,9 +730,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         if (side == 0 || (source.width == side && source.height == side)) return source
         val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
         val c = android.graphics.Canvas(out)
-        // Blurred cover background, upscaled from a small blurred copy.
-        val cover = Bitmap.createScaledBitmap(source, side, side, true)
-        val blurred = RelightMap.blurredCopy(cover, 256)
+        // Blurred cover background: crop-fit to square, then heavy blur at 96 px.
+        val cover = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        val coverScale = maxOf(side.toFloat() / source.width, side.toFloat() / source.height)
+        val cw = source.width * coverScale
+        val ch = source.height * coverScale
+        val coverDst = android.graphics.RectF((side - cw) / 2f, (side - ch) / 2f, (side + cw) / 2f, (side + ch) / 2f)
+        android.graphics.Canvas(cover).drawBitmap(source, null, coverDst, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        val b1 = RelightMap.blurredCopy(cover, 96)
+        val b2 = RelightMap.blurredCopy(b1, 96)
+        val blurred = RelightMap.blurredCopy(b2, 96)
+        b1.recycle(); b2.recycle()
         val stretched = Bitmap.createScaledBitmap(blurred, side, side, true)
         c.drawBitmap(stretched, 0f, 0f, null)
         if (stretched !== blurred) stretched.recycle()

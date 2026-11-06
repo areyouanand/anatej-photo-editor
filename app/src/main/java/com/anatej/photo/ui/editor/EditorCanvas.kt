@@ -278,12 +278,50 @@ fun EditorCanvas(
         val drawH = base.height * zoom
         val centerX = size.width / 2f + pan.x
         val centerY = size.height / 2f + pan.y
-        val rect = Rect(
-            centerX - drawW / 2f,
-            centerY - drawH / 2f,
-            centerX + drawW / 2f,
-            centerY + drawH / 2f
+        val sqSide = min(size.width, size.height) * zoom
+        val sqRect = Rect(
+            centerX - sqSide / 2f,
+            centerY - sqSide / 2f,
+            centerX + sqSide / 2f,
+            centerY + sqSide / 2f
         )
+
+        if (squarePic && !compare) {
+            clipRect(sqRect.left, sqRect.top, sqRect.right, sqRect.bottom) {
+                val bgImage = bloomImage ?: displayImage
+                val coverScale = max(sqSide / bgImage.width, sqSide / bgImage.height)
+                val bgW = bgImage.width * coverScale
+                val bgH = bgImage.height * coverScale
+                drawImage(
+                    image = bgImage,
+                    srcOffset = IntOffset.Zero,
+                    srcSize = IntSize(bgImage.width, bgImage.height),
+                    dstOffset = IntOffset((sqRect.left - (bgW - sqSide) / 2f).roundToInt(), (sqRect.top - (bgH - sqSide) / 2f).roundToInt()),
+                    dstSize = IntSize(bgW.roundToInt(), bgH.roundToInt()),
+                    colorFilter = filter,
+                    filterQuality = FilterQuality.Medium
+                )
+            }
+        }
+
+        val rect = if (squarePic && !compare) {
+            val fitScale = min(sqSide / display.width, sqSide / display.height)
+            val fitW2 = display.width * fitScale
+            val fitH2 = display.height * fitScale
+            Rect(
+                sqRect.left + (sqSide - fitW2) / 2f,
+                sqRect.top + (sqSide - fitH2) / 2f,
+                sqRect.left + (sqSide + fitW2) / 2f,
+                sqRect.top + (sqSide + fitH2) / 2f
+            )
+        } else {
+            Rect(
+                centerX - drawW / 2f,
+                centerY - drawH / 2f,
+                centerX + drawW / 2f,
+                centerY + drawH / 2f
+            )
+        }
 
         drawImage(
             image = if (compare) sourceImage else displayImage,
@@ -313,38 +351,7 @@ fun EditorCanvas(
         }
 
         if (squarePic && !compare) {
-            val side = min(rect.width, rect.height)
-            val sqLeft = rect.center.x - side / 2f
-            val sqTop = rect.center.y - side / 2f
-            val sqRect = Rect(sqLeft, sqTop, sqLeft + side, sqTop + side)
-            // Blurred bars: stretched blurred copy filling the square.
-            val bgImage = bloomImage ?: displayImage
-            val coverScale = max(side / bgImage.width, side / bgImage.height)
-            val bgW = bgImage.width * coverScale
-            val bgH = bgImage.height * coverScale
-            drawImage(
-                image = bgImage,
-                srcOffset = IntOffset.Zero,
-                srcSize = IntSize(bgImage.width, bgImage.height),
-                dstOffset = IntOffset((sqLeft - (bgW - side) / 2f).roundToInt(), (sqTop - (bgH - side) / 2f).roundToInt()),
-                dstSize = IntSize(bgW.roundToInt(), bgH.roundToInt()),
-                colorFilter = filter,
-                filterQuality = FilterQuality.Medium
-            )
-            // Full image fit inside.
-            val fitScale = min(side / display.width, side / display.height)
-            val fitW2 = display.width * fitScale
-            val fitH2 = display.height * fitScale
-            drawImage(
-                image = displayImage,
-                srcOffset = IntOffset.Zero,
-                srcSize = IntSize(display.width, display.height),
-                dstOffset = IntOffset((sqLeft + (side - fitW2) / 2f).roundToInt(), (sqTop + (side - fitH2) / 2f).roundToInt()),
-                dstSize = IntSize(fitW2.roundToInt(), fitH2.roundToInt()),
-                colorFilter = filter,
-                filterQuality = FilterQuality.Medium
-            )
-            drawRect(color = Color.White.copy(alpha = 0.5f), topLeft = sqRect.topLeft, size = sqRect.size, style = Stroke(2f))
+            drawRect(color = Color.White.copy(alpha = 0.42f), topLeft = sqRect.topLeft, size = sqRect.size, style = Stroke(1.5f))
         }
 
         if (cropAspect > 0.01f && !compare) {
@@ -370,19 +377,21 @@ fun EditorCanvas(
                 val t2 = (cy - ch / 2f).coerceIn(rect.top, rect.bottom - ch)
                 Rect(l, t2, l + cw, t2 + ch)
             }
-            // Dim outside
-            drawRect(Color.Black.copy(alpha = 0.55f), topLeft = rect.topLeft, size = rect.size)
-            drawRect(Color.Transparent, topLeft = cropRect.topLeft, size = cropRect.size)
-            // Re-draw the cropped region over the dim (clear by drawing image again)
-            drawImage(
-                image = displayImage,
-                srcOffset = IntOffset.Zero,
-                srcSize = IntSize(display.width, display.height),
-                dstOffset = IntOffset(cropRect.left.roundToInt(), cropRect.top.roundToInt()),
-                dstSize = IntSize(cropRect.width.roundToInt(), cropRect.height.roundToInt()),
-                colorFilter = if (compare) null else filter,
-                filterQuality = FilterQuality.Medium
-            )
+            // Dim the 4 strips outside the crop rect without re-drawing the image
+            // (re-drawing squeezed the full source into cropRect).
+            val dim = Color.Black.copy(alpha = 0.58f)
+            if (cropRect.top > rect.top) {
+                drawRect(dim, Offset(rect.left, rect.top), Size(rect.width, cropRect.top - rect.top))
+            }
+            if (cropRect.bottom < rect.bottom) {
+                drawRect(dim, Offset(rect.left, cropRect.bottom), Size(rect.width, rect.bottom - cropRect.bottom))
+            }
+            if (cropRect.left > rect.left) {
+                drawRect(dim, Offset(rect.left, cropRect.top), Size(cropRect.left - rect.left, cropRect.height))
+            }
+            if (cropRect.right < rect.right) {
+                drawRect(dim, Offset(cropRect.right, cropRect.top), Size(rect.right - cropRect.right, cropRect.height))
+            }
             // Grid (rule of thirds)
             drawLine(
                 Color.White.copy(alpha = 0.75f),
@@ -494,7 +503,7 @@ fun EditorCanvas(
                             srcSize = IntSize(overlayImage.width, overlayImage.height),
                             dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
                             dstSize = IntSize(rect.width.roundToInt(), rect.height.roundToInt()),
-                            blendMode = BlendMode.Screen,
+                            colorFilter = filter,
                             filterQuality = FilterQuality.Medium
                         )
                     } else if (useMask && maskImage != null) {
@@ -516,7 +525,8 @@ fun EditorCanvas(
                         drawRadialKey()
                     }
 
-                    // Placement reticle
+                    // Placement reticle (shown only while editing light)
+                    if (lightEditable) {
                     val reticle = Offset(lx, ly)
                     drawCircle(
                         color = Color.White.copy(alpha = 0.85f),
@@ -537,6 +547,7 @@ fun EditorCanvas(
                         1.dp.toPx()
                     )
                     drawCircle(tokens.accent, radius = 2.5.dp.toPx(), center = reticle)
+                    }
                 }
 
                 if (bloomImage != null && (bloom > 0.01f || sharpness > 0.01f)) {

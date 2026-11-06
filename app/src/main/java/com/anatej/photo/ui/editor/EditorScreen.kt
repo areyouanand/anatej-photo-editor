@@ -339,6 +339,28 @@ private fun PreviewArea(
                 modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
             )
 
+            if (state.light.enabled) {
+                PreviewChip(
+                    text = if (lightEditable) "DRAG LIGHT" else "LIGHT ON",
+                    active = true,
+                    onClick = { viewModel.setLightEnabled(false) },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+                )
+            }
+
+            val badge = when {
+                state.squarePic -> "SQUARE PIC"
+                state.cropAspect > 0.01f -> "CROP ACTIVE"
+                state.lut != null -> "${state.lutName ?: "LUT"} · ${(state.lutStrength * 100).roundToInt()}%"
+                state.look.id != Looks.Original.id -> "${state.look.name} · ${(state.lookStrength * 100).roundToInt()}%"
+                else -> "${source.width} × ${source.height}"
+            }
+            PreviewChip(
+                text = badge,
+                active = state.squarePic || state.cropAspect > 0.01f || state.lut != null || state.look.id != Looks.Original.id,
+                modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
+            )
+
             ZoomControls(
                 zoom = zoom,
                 onZoomOut = {
@@ -352,60 +374,6 @@ private fun PreviewArea(
                     zoom = 1f
                     pan = Offset.Zero
                 },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-            )
-
-            if (state.light.enabled) {
-                PreviewChip(
-                    text = if (lightEditable) "DRAG LIGHT" else if (state.light.subjectOnly && state.subjectMask != null) "SUBJECT LIGHT" else "LIGHT ON",
-                    active = true,
-                    onClick = { viewModel.setLightEnabled(false) },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
-                )
-            } else {
-                PreviewChip(
-                    text = "LIGHT OFF",
-                    active = false,
-                    onClick = { viewModel.setLightEnabled(true) },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
-                )
-            }
-
-            if (state.subjectMask != null) {
-                PreviewChip(
-                    text = if (showMask) "HIDE MASK" else "VIEW MASK",
-                    active = showMask,
-                    onClick = { onShowMaskChange(!showMask) },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 10.dp, top = 46.dp)
-                )
-            }
-
-            if (lightEditable || state.light.enabled) {
-                val isLightMode = lightEditable
-                PreviewChip(
-                    text = if (isLightMode) "◉ LIGHT MODE" else "◐ PAN MODE",
-                    active = true,
-                    onClick = { onInteractionMode(!isLightMode) },
-                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, bottom = 46.dp)
-                )
-            }
-
-            val badge = when {
-                state.lut != null -> "${state.lutName ?: "LUT"} · ${(state.lutStrength * 100).roundToInt()}%"
-                state.look.id != Looks.Original.id -> "${state.look.name} · ${(state.lookStrength * 100).roundToInt()}%"
-                else -> null
-            }
-            if (badge != null) {
-                PreviewChip(
-                    text = badge,
-                    active = state.lut != null,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, bottom = 82.dp)
-                )
-            }
-
-            PreviewChip(
-                text = "${source.width} × ${source.height}",
-                active = false,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp)
             )
         } else if (state.loading) {
@@ -544,32 +512,39 @@ private fun ToolTabs(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .padding(horizontal = 14.dp, vertical = 5.dp)
             .clip(shape)
             .background(t.panel)
             .border(1.dp, t.line, shape)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         tabs.forEachIndexed { index, tab ->
             val selected = index == selectedIndex
+            val itemShape = RoundedCornerShape(t.smallCorner - 2.dp)
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    .clip(itemShape)
+                    .background(if (selected) t.accent.copy(alpha = 0.16f) else Color.Transparent)
                     .clickable { onSelect(index) }
-                    .padding(vertical = 7.dp),
+                    .padding(vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = "0${index + 1}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (selected) t.accent else t.textDim.copy(alpha = 0.6f),
+                    color = if (selected) t.accent else t.textDim.copy(alpha = 0.55f),
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 8.sp
+                    fontSize = 7.sp
                 )
                 Text(
                     text = tab.label,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     color = if (selected) t.accent else t.textDim,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    maxLines = 1
                 )
             }
         }
@@ -583,7 +558,7 @@ private fun PanelContainer(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(360.dp)
+            .height(296.dp)
             .border(1.dp, t.line, shape)
             .clip(shape)
             .background(t.panel)
@@ -597,7 +572,7 @@ private fun AutoPanel(state: EditorUiState, viewModel: EditorViewModel) {
     val t = LocalAnatej.current
     val analysis = state.analysis
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 14.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             MonoLabel("SIGNAL ANALYSIS", t.accent)
             Spacer(Modifier.weight(1f))
@@ -770,8 +745,7 @@ private fun LightPanel(
             )
         }
 
-        Spacer(Modifier.height(8.dp))
-        MicroLabel("BRIGHTEN FACE")
+        Spacer(Modifier.height(6.dp))
         ValueSlider(
             label = "Brighten face",
             value = light.intensity.coerceIn(0f, 100f),
