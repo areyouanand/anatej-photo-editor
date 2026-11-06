@@ -253,12 +253,12 @@ fun SettingsScreen(
                 Spacer(Modifier.height(4.dp))
                 val context = LocalContext.current
                 Text(
-                    text = "github.com/areyouanand",
+                    text = "github.com/areyouanand/anatej-photo-editor",
                     style = MaterialTheme.typography.bodySmall,
                     color = t.accent,
                     textDecoration = TextDecoration.Underline,
                     modifier = Modifier.clickable {
-                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/areyouanand")))
+                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/areyouanand/anatej-photo-editor")))
                     }
                 )
             }
