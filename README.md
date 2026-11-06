@@ -91,16 +91,25 @@ Requirements: JDK 17, Android SDK Platform 36, platform-tools.
 ```bash
 echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# ABI splits: install the slice that matches the device (arm64 covers modern phones)
+adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```
 
-Tests: `./gradlew :app:testDebugUnitTest` (cube parser, trilinear sampling, rejection of
-1D/incomplete LUTs).
+Tests: `./gradlew :app:testDebugUnitTest` (cube parser incl. 65³, trilinear sampling,
+rejection of 1D/incomplete LUTs, crop/straighten geometry, tone matrix, look/LUT series).
 
-The debug APK is ~152 MB because it bundles the 33.5 MB MiDaS-small model plus ML Kit and
-TensorFlow Lite native libraries for every ABI. A release build with ABI splits or an
-`arm64-v8a` App Bundle is the next packaging step. Model attribution is in
-`THIRD_PARTY_NOTICES.md` and `app/src/main/assets/MIDAS_LICENSE.txt`.
+The build produces per-ABI APKs because it bundles the 32 MB MiDaS-small model plus ML Kit
+and TensorFlow Lite native libraries:
+
+| APK | Size |
+| --- | --- |
+| `app-arm64-v8a-debug.apk` | 86.4 MB |
+| `app-armeabi-v7a-debug.apk` | 79.9 MB |
+| `app-universal-debug.apk` | 103.9 MB |
+
+`x86`/`x86_64` are excluded (no emulator slices). A signed release build with R8 is the next
+packaging step. Model attribution is in `THIRD_PARTY_NOTICES.md` and
+`app/src/main/assets/MIDAS_LICENSE.txt`.
 
 ## Project map
 

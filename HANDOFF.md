@@ -6,8 +6,11 @@
 **Platform:** Android 10+ (`minSdk 29`), built against API 36
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
-**Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `19c41a98264a20f572039792aff40f1e04805fa0e3c22c083e507a5fca38dd83`
+**Artifact:** per-ABI debug APKs in `app/build/outputs/apk/debug/`
+- `app-arm64-v8a-debug.apk` **86.4 MB** (phones — this is the one to install)
+- `app-armeabi-v7a-debug.apk` **79.9 MB** (older 32-bit phones)
+- `app-universal-debug.apk` **103.9 MB** (both ABIs, for mixed test hardware)
+**SHA-256:** `app-arm64-v8a-debug.apk` → `c734caea076fc197fd19711c3836bb8765f303729e931b975f1f65cf3806a184`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
 **State:** latest 0.4.0 APK (SHA above) installed on the CPH2841 and verified:
 1. **Interactive gallery-style crop** — draggable L-corner + edge handles, inside-box pan, 7 aspect locks (`FREE`/`ORIG`/`1:1`/`4:5`/`3:2`/`16:9`/`9:16`), a ±45° **Straighten** slider with automatic inscribed zoom, Rotate 90°, Flip, and Reset. Leaving the CROP tab shows only the cropped region fitted to the preview (non-destructive).
@@ -286,15 +289,38 @@ echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 ./gradlew :app:assembleDebug
 ./gradlew :app:testDebugUnitTest
 ./gradlew :app:lintDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# install the slice that matches the phone (arm64 for the CPH2841)
+adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```
+
+ABI splits are configured in `app/build.gradle.kts`:
+
+```kotlin
+defaultConfig.ndk.abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+splits.abi { isEnable = true; include("arm64-v8a", "armeabi-v7a"); isUniversalApk = true }
+```
+
+Output sizes (debug, `versionName 0.4.0`):
+
+| APK | Size | Use |
+| --- | --- | --- |
+| `app-arm64-v8a-debug.apk` | **86.4 MB** | real phones (test device) |
+| `app-armeabi-v7a-debug.apk` | **79.9 MB** | older 32-bit devices |
+| `app-universal-debug.apk` | **103.9 MB** | both ABIs / sideloading |
+
+Breakdown for the arm64 slice: 32.0 MB MiDaS `.tflite`, 24.0 MB native libs
+(`libxeno_native.so` 21.6 MB + TFLite 3.5 MB), 29.2 MB dex, 1.0 MB resources.
+
+`x86` / `x86_64` are intentionally excluded — no emulator slices are built, which is also
+why the ABI split reduced the APK from 151.5 MB to 86.4 MB. Add `x86_64` back to both the
+`abiFilters` and `include` lists if an emulator build is needed.
 
 Unit tests cover `.cube` parsing (including `65³` tables), trilinear sampling, 1D rejection,
 incomplete-LUT rejection, crop/straighten geometry and `straightenZoom`, the tone-slider
 preview matrix, LUT/Favourites series separation and Square Pic labels — **19 tests**.
 
-Debug APK size is dominated by ML Kit native libraries for all ABIs. For distribution,
-next step is an App Bundle or ABI splits (`arm64-v8a` covers the test phone).
+Remaining size work is R8/shrinking (the debug dex is 29 MB uncompressed) and a signed
+release config; an App Bundle would also let Play deliver only the arm64 slice.
 
 ---
 
@@ -309,8 +335,9 @@ next step is an App Bundle or ABI splits (`arm64-v8a` covers the test phone).
    3000 px bitmap. Fine for single exports; a tile-based pass would help batch export.
 4. RAW decode, batch export, and session persistence across process death are still open.
 5. Library requires a runtime permission; SAF/system picker remain permission-free.
-6. Release packaging: shrink the 151 MB debug APK with ABI splits, enable R8 and a signed
-   release config. The 33.5 MB depth model dominates.
+6. Release packaging: ABI splits are in place (86.4 MB arm64 debug), but the debug dex is
+   29 MB and R8 is still off. A signed release build with minify + resource shrinking is the
+   next big win, and an App Bundle would let Play serve one slice per device.
 7. Optional polish: custom user presets ("My Looks"), film border/date stamp, and an HSL
    panel next to the split-tone controls.
 
@@ -357,12 +384,12 @@ cd "/mnt/1tb/AI stuff/FUJI Camera"
 export JAVA_HOME=/home/anand/.local/opt/jdk-17
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 adb devices
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```
 
 Suggested order for the next milestone:
 
-1. Release packaging: App Bundle + `arm64-v8a` split, R8, signed config.
+1. Signed release build with R8 + resource shrinking (debug dex is 29 MB), plus an App Bundle.
 2. Session persistence (store the working bitmap in app cache + restore URI).
 3. HSL panel and user-saved custom presets.
 4. Optional: higher-resolution depth model or a face-mesh refinement behind
@@ -376,7 +403,8 @@ uses the public test portrait and UI chrome.
 
 ## 8. Current device state
 
-- Final 0.4.0 APK installed on the CPH2841 (`3B164J000QB00000`) with SHA above.
+- Final 0.4.0 **arm64-v8a split** APK installed on the CPH2841 (`3B164J000QB00000`);
+  `primaryCpuAbi=arm64-v8a` confirmed and the app launches with no crash entries.
   On-device checks passed: landscape 960×540 source in a 16:9 adaptive preview card,
   unclipped crop corner handles with the Straighten slider at `+0.0°`, the dedicated
   `3D LUT · CUBE` tab reporting **45 LUTs available** with graded thumbnails, a look

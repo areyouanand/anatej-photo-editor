@@ -14,6 +14,22 @@ android {
         targetSdk = 36
         versionCode = 4
         versionName = "0.4.0"
+        ndk {
+            // The app is used on phones; x86/x86_64 only matter for emulators.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+
+    // Per-ABI APKs: the bundled ML Kit + TensorFlow Lite native libraries are the bulk of
+    // the download, and no device ever needs more than one slice. `universal` is kept for
+    // adb installs on mixed test hardware.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
+        }
     }
 
     buildTypes {
