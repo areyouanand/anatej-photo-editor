@@ -51,6 +51,7 @@ The theme now lives in **Settings**, reachable only from the home screen.
 - **Authentic camera looks.** Rebuilt Fujifilm/Nikon/Hasselblad stocks with per-stock grain, vignette, unsharp sharpness and highlight bloom; Adjust also exposes Sharpness and Bloom.
 - **Lighting styles.** Choose Softbox (soft directional) or Flashlight (directed beam) in Advanced Light.
 - **Square Pic crop for profiles.** CROP tab with 1:1 (WhatsApp profile), 4:5, 9:16 and 16:9 aspects, drag to reposition, zoom, and export applies the crop.
+- **Square Pic (blurred bars).** Separate SQUARE tab: fit the whole photo into a square with a blurred copy filling the empty bars.
 - **Share from other apps.** The editor is a target for image shares (SEND / SEND_MULTIPLE) and opens image VIEW intents.
 - **Portrait light (OPPO-style simple first).** The panel opens on a single 0–100
   *Brighten face* slider that auto-places on the subject. Advanced tools (direction pad,

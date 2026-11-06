@@ -1,17 +1,18 @@
 # Anatej Photo Editor — Handoff
 
 **Version:** 0.3.0 (versionCode 3)
-**Last updated:** 2026-11-06, after lighting style choice, Square Pic crop, and share intent
+**Last updated:** 2026-11-06, after crop grid fix + Square Pic blurred-bar mode
 **Location:** `/mnt/1tb/AI stuff/FUJI Camera`
 **Platform:** Android 10+ (`minSdk 29`), built against API 36
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `f6ec7c6a6d9024706d173f57b7ebd8352c05704678a7e19cacee04ebe01c222c`
+**SHA-256:** `a14ea91faaf3367acbc9bc93b4fe7744cb9f397ee9ecf5d7ff802d92081a4741`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
-**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841 and verified after
-reconnect: 1:1 crop applied on export is a true **1080×1080** JPEG — WhatsApp-ready.
-Sharing via SEND, the crop grid, and the Softbox/Flash style switch are all live.
+**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841 and verified: fixed the
+crop grid to fit inside the frame, renamed the crop chip to **1:1**, and added a separate
+**SQUARE PIC** tab (full image centred in a square with blurred bars). Square Pic export
+is a true **1920×1920** JPEG with the fit math fixed. Sharing via SEND verified.
 Emulator closed. Test media cleaned up.
 
 ---
@@ -161,7 +162,8 @@ The editor header is reserved for back, undo/redo, and save.
 | Export quality + About | Settings stores `exportQuality` (70–100%, default 95%); `saveToGallery` compresses with it. About shows `DEVELOPER: @areyouanand` and a tappable `github.com/areyouanand/anatej-photo-editor` link. **User-verified manually on device.** |
 | Auto-rescue strength + looks | `autoRescueStrength` (30–200%) scales the whole `autoEnhance` recipe (exposure/contrast/saturation + relight). Looks rebuilt: Fujifilm (Provia/Velvia/Chrome/NEG/Astia/Acros/Reala), Nikon (+Flat), Hasselblad (+X2D) each with distinct grain/vignette/sharpness/bloom recipes; preview shows bloom/sharpen via a blurred overlay (`RelightMap.blurredCopy`), export bakes unsharp-mask + highlight bloom in `PhotoRenderer.applyEnhancements`. On-device: slider visible at 100% default, Fuji series renders, Velvia preview and 1920×1080 export both show the stock curve. |
 | Lighting style switch | `PortraitLight.style` (Softbox / Flashlight) branches falloff, wrap, fill and soft-clip in the shared `sampleLight`; toggle lives in the Advanced Light section, default Flashlight. |
-| Square Pic crop | New CROP tab with Off / 1:1 / 4:5 / 9:16 / 16:9 chips, drag-to-reposition, 1–3× crop zoom, and `cropBitmap` in export (largest fitting rect, then zoom). |
+| Square Pic crop | New CROP tab with Off / 1:1 / 4:5 / 9:16 / 16:9 chips, drag-to-reposition, 1–3× crop zoom, and `cropBitmap` in export (largest fitting rect, then zoom). Crop grid now uses the same fit math as export. |
+| Square Pic (blurred bars) | Separate SQUARE tab: `padToSquare` fits the full frame into a square over a blurred stretched copy; preview shows the blurred bars. Verified as a 1920×1920 export. |
 | App-to-app sharing | Manifest SEND/SEND_MULTIPLE image filters; `MainActivity.sharedImageUri()` routes EXTRA_STREAM into the editor; `loadPhoto` decodes content URIs. |
 | Simple brighten | Light panel opens on one **Brighten face** slider (`EditorViewModel.brightenFace` auto-places on the subject and enables the key) + Auto-brighten; presets/direction pad/sliders sit behind **Advanced tools**. Display scale is 0–100, but the internal model maps it to `(intensity/100)·30%` of full relight — 100 behaves like the old 30% mark. |
 | Emulator | Stopped after the pass at the user's request; no emulator process/window remains |

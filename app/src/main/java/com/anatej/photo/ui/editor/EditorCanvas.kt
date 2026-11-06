@@ -76,6 +76,7 @@ fun EditorCanvas(
     compare: Boolean,
     lightEditable: Boolean,
     cropEditable: Boolean = false,
+    squarePic: Boolean = false,
     cropAspect: Float = 0f,
     cropZoom: Float = 1f,
     cropCenterX: Float = 0.5f,
@@ -311,18 +312,49 @@ fun EditorCanvas(
             }
         }
 
+        if (squarePic && !compare) {
+            val side = min(rect.width, rect.height)
+            val sqLeft = rect.center.x - side / 2f
+            val sqTop = rect.center.y - side / 2f
+            val sqRect = Rect(sqLeft, sqTop, sqLeft + side, sqTop + side)
+            // Blurred bars: stretched blurred copy filling the square.
+            val bgImage = bloomImage ?: displayImage
+            val coverScale = max(side / bgImage.width, side / bgImage.height)
+            val bgW = bgImage.width * coverScale
+            val bgH = bgImage.height * coverScale
+            drawImage(
+                image = bgImage,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(bgImage.width, bgImage.height),
+                dstOffset = IntOffset((sqLeft - (bgW - side) / 2f).roundToInt(), (sqTop - (bgH - side) / 2f).roundToInt()),
+                dstSize = IntSize(bgW.roundToInt(), bgH.roundToInt()),
+                colorFilter = filter,
+                filterQuality = FilterQuality.Medium
+            )
+            // Full image fit inside.
+            val fitScale = min(side / display.width, side / display.height)
+            val fitW2 = display.width * fitScale
+            val fitH2 = display.height * fitScale
+            drawImage(
+                image = displayImage,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(display.width, display.height),
+                dstOffset = IntOffset((sqLeft + (side - fitW2) / 2f).roundToInt(), (sqTop + (side - fitH2) / 2f).roundToInt()),
+                dstSize = IntSize(fitW2.roundToInt(), fitH2.roundToInt()),
+                colorFilter = filter,
+                filterQuality = FilterQuality.Medium
+            )
+            drawRect(color = Color.White.copy(alpha = 0.5f), topLeft = sqRect.topLeft, size = sqRect.size, style = Stroke(2f))
+        }
+
         if (cropAspect > 0.01f && !compare) {
             val aspect = cropAspect
             val safeZoom = cropZoom.coerceIn(1f, 3f)
-            val cropW: Float
-            val cropH: Float
-            if (aspect >= 1f) {
-                cropW = rect.width / safeZoom
-                cropH = cropW / aspect
-            } else {
-                cropH = rect.height / safeZoom
-                cropW = cropH * aspect
-            }
+            // Largest rect of the target aspect that fits in the frame, then zoom.
+            val fitH = min(rect.height, rect.width / aspect)
+            val fitW = fitH * aspect
+            val cropW = fitW / safeZoom
+            val cropH = fitH / safeZoom
             val cw = cropW.coerceIn(1f, rect.width)
             val ch = cropH.coerceIn(1f, rect.height)
             val cx = rect.left + cropCenterX * rect.width

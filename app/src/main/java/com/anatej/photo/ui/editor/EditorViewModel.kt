@@ -449,6 +449,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(cropCenterX = x.coerceIn(0.05f, 0.95f), cropCenterY = y.coerceIn(0.05f, 0.95f)) }
     }
 
+    fun setSquarePic(enabled: Boolean) {
+        record("square-pic", force = true)
+        _state.update { it.copy(squarePic = enabled) }
+    }
+
     fun resetCrop() {
         record("crop-reset", force = true)
         _state.update { it.copy(cropAspect = 0f, cropZoom = 1f, cropCenterX = 0.5f, cropCenterY = 0.5f) }
@@ -596,7 +601,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
                 try {
-                    val finalBitmap = cropBitmap(rendered, snapshot.cropAspect, snapshot.cropZoom, snapshot.cropCenterX, snapshot.cropCenterY)
+                    val finalBitmap = if (snapshot.squarePic) {
+                        padToSquare(rendered)
+                    } else {
+                        cropBitmap(rendered, snapshot.cropAspect, snapshot.cropZoom, snapshot.cropCenterX, snapshot.cropCenterY)
+                    }
                     withContext(Dispatchers.IO) { saveToGallery(finalBitmap) }
                     if (finalBitmap !== rendered) finalBitmap.recycle()
                 } finally {
@@ -713,6 +722,33 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val top = ((centerY * source.height) - h / 2f).roundToInt().coerceIn(0, source.height - h)
         return Bitmap.createBitmap(source, left, top, w, h)
     }
+
+    /** SquarePic: fit the full frame into a square, blurred stretched copy fills the bars. */
+    private fun padToSquare(source: Bitmap): Bitmap {
+        val side = maxOf(source.width, source.height)
+        if (side == 0 || (source.width == side && source.height == side)) return source
+        val out = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(out)
+        // Blurred cover background, upscaled from a small blurred copy.
+        val cover = Bitmap.createScaledBitmap(source, side, side, true)
+        val blurred = RelightMap.blurredCopy(cover, 256)
+        val stretched = Bitmap.createScaledBitmap(blurred, side, side, true)
+        c.drawBitmap(stretched, 0f, 0f, null)
+        if (stretched !== blurred) stretched.recycle()
+        blurred.recycle()
+        cover.recycle()
+        val fitScale = minOf(
+            side / source.width.toFloat(),
+            side / source.height.toFloat()
+        )
+        val dw = (source.width * fitScale).roundToInt().coerceIn(1, side)
+        val dh = (source.height * fitScale).roundToInt().coerceIn(1, side)
+        val rect = android.graphics.Rect((side - dw) / 2, (side - dh) / 2, (side + dw) / 2, (side + dh) / 2)
+        c.drawBitmap(source, null, rect, android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        return out
+    }
+
+    private fun maxOf(a: Int, b: Int) = if (a > b) a else b
 
     private fun saveToGallery(bitmap: Bitmap) {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())

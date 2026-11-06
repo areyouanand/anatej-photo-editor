@@ -249,6 +249,7 @@ data class EditorUiState(
     val cropZoom: Float = 1f,
     val cropCenterX: Float = 0.5f,
     val cropCenterY: Float = 0.5f,
+    val squarePic: Boolean = false,
     val maskScanning: Boolean = false,
     val thumbs: Map<String, Bitmap> = emptyMap(),
     val loading: Boolean = false,

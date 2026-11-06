@@ -86,7 +86,8 @@ private enum class EditorTab(val label: String) {
     Light("LIGHT"),
     Adjust("ADJUST"),
     Looks("LOOKS"),
-    Crop("CROP")
+    Crop("CROP"),
+    SquarePic("SQUARE")
 }
 
 @Composable
@@ -167,6 +168,7 @@ fun EditorScreen(
                         )
                         EditorTab.Adjust -> AdjustPanel(state, viewModel)
                         EditorTab.Crop -> CropPanel(state = state, viewModel = viewModel)
+                        EditorTab.SquarePic -> SquarePicPanel(state = state, viewModel = viewModel)
                         EditorTab.Looks -> LooksPanel(
                             state = state,
                             viewModel = viewModel,
@@ -307,6 +309,7 @@ private fun PreviewArea(
                 compare = state.compare || holdCompare,
                 lightEditable = lightEditable,
                 cropEditable = cropEditable,
+                squarePic = state.squarePic,
                 cropAspect = state.cropAspect,
                 cropZoom = state.cropZoom,
                 cropCenterX = state.cropCenterX,
@@ -1130,7 +1133,7 @@ private fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PresetChip("OFF", aspect <= 0.01f) { viewModel.setCrop(0f) }
-            PresetChip("1:1 SQUARE", kotlin.math.abs(aspect - 1f) < 0.01f) { viewModel.setCrop(1f) }
+            PresetChip("1:1", kotlin.math.abs(aspect - 1f) < 0.01f) { viewModel.setCrop(1f) }
             PresetChip("4:5", kotlin.math.abs(aspect - 0.8f) < 0.01f) { viewModel.setCrop(0.8f) }
             PresetChip("9:16", kotlin.math.abs(aspect - 0.5625f) < 0.01f) { viewModel.setCrop(0.5625f) }
         }
@@ -1168,6 +1171,47 @@ private fun CropPanel(state: EditorUiState, viewModel: EditorViewModel) {
 }
 
 private fun Float.nf1(): String = String.format(java.util.Locale.US, "%.1f", this)
+
+@Composable
+private fun SquarePicPanel(state: EditorUiState, viewModel: EditorViewModel) {
+    val t = LocalAnatej.current
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Square Pic",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = t.text
+                )
+                Text(
+                    text = if (state.squarePic) "Full image centred in a square; blurred copy fills the empty bars."
+                    else "Fit the whole photo into a square with blurred bars.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = t.textDim
+                )
+            }
+            AnatejSwitch(
+                checked = state.squarePic,
+                onCheckedChange = viewModel::setSquarePic
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AnatejButton(
+                text = if (state.squarePic) "Disable Square Pic" else "Enable Square Pic",
+                onClick = { viewModel.setSquarePic(!state.squarePic) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        MonoLabel(
+            text = if (state.squarePic) "LIVE — EXPORTED AS A SQUARE" else "OFF — EXPORT KEEPS THE FRAME",
+            color = if (state.squarePic) t.accent else t.textDim
+        )
+    }
+}
 
 @Composable
 private fun AdjustPanel(state: EditorUiState, viewModel: EditorViewModel) {
