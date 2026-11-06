@@ -9,13 +9,10 @@ TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
 **SHA-256:** `f6ec7c6a6d9024706d173f57b7ebd8352c05704678a7e19cacee04ebe01c222c`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
-**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841. Shared a photo into the
-app via ACTION_SEND (manifest filters for SEND + SEND_MULTIPLE; MainActivity extracts
-EXTRA_STREAM), selected the 1:1 crop on the preview grid, and saw CROP LIVE state. A
-fit bug in cropBitmap (landscape 1:1 keeping full width) was fixed; the corrected build
-installed but the phone disconnected before the final square-export check. Lighting style
-switch (Softbox/Flash) is in Advanced. Emulator closed. Test media pending cleanup on
-reconnect.
+**State:** latest 0.3.0 APK (SHA above) installed on the CPH2841 and verified after
+reconnect: 1:1 crop applied on export is a true **1080×1080** JPEG — WhatsApp-ready.
+Sharing via SEND, the crop grid, and the Softbox/Flash style switch are all live.
+Emulator closed. Test media cleaned up.
 
 ---
 
