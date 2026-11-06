@@ -1,17 +1,21 @@
 # Anatej Photo Editor — Handoff
 
 **Version:** 0.3.0 (versionCode 3)
-**Last updated:** 2026-11-06, after the 0–100 gentle-max intensity + simple brighten pass
+**Last updated:** 2026-11-06, after export-quality setting, About credits, and GitHub push
 **Location:** `/mnt/1tb/AI stuff/FUJI Camera`
 **Platform:** Android 10+ (`minSdk 29`), built against API 36
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `8bd45b341e19db9987745bec5071ff9ebb7726a2a83011dcde4974d5e13748ce`
+**SHA-256:** `d16b52604d5f4a3d958b47ccff5173fecd6ae4375f7543c14f004ec53a13cb8e`
+**GitHub:** https://github.com/areyouanand/anatej-photo-editor
 **State:** latest 0.3.0 APK (SHA above) **installed on the CPH2841** and smoke-tested on
 device: simplified 0–100 Brighten face slider (OPPO-style single control), advanced tools
 collapsed behind a toggle. The displayed 0–100 scale tops out at the old 30% strength, so
-even 100 feels gentle. No crash in logcat. The emulator is closed. Test media was removed.
+even 100 feels gentle. Added an Export quality setting (70–100%, default 95%) and About
+credits (@areyouanand + GitHub link). Pushed to `areyouanand/anatej-photo-editor` (master).
+No app crash in logcat; the phone was locked for the Settings UI check. The emulator is
+closed. Test media was removed.
 
 ---
 
@@ -157,6 +161,7 @@ The editor header is reserved for back, undo/redo, and save.
 | Device coverage | v0.3 UI pass on API 36 emulator and final 0.3.0 install + zoom/pan/hold/export smoke test on CPH2841/Android 16 |
 | Softbox relight | Presets (Natural/Rembrandt/Butterfly/Loop/Side/Top) and AZ/EL direction pad change the shading; 91% intensity stays readable under soft clip; export matches preview pixel-for-pixel in structure |
 | Light UX | VIEW MASK orange tint, interactive DRAG LIGHT / LIGHT OFF / VIEW MASK / LIGHT⇄PAN chips, labeled SUBJECT MASKING + Background spill sliders, scrollable Light panel (360 dp), slider haptic detent ticks |
+| Export quality + About | Settings stores `exportQuality` (70–100%, default 95%); `saveToGallery` compresses with it. About shows `DEVELOPER: @areyouanand` and a tappable `github.com/areyouanand/anatej-photo-editor` link. |
 | Simple brighten | Light panel opens on one **Brighten face** slider (`EditorViewModel.brightenFace` auto-places on the subject and enables the key) + Auto-brighten; presets/direction pad/sliders sit behind **Advanced tools**. Display scale is 0–100, but the internal model maps it to `(intensity/100)·30%` of full relight — 100 behaves like the old 30% mark. |
 | Emulator | Stopped after the pass at the user's request; no emulator process/window remains |
 

@@ -1,5 +1,9 @@
 # Anatej Photo Editor
 
+## Anatej Photo Editor
+
+**Developed by [@areyouanand](https://github.com/areyouanand) · [github.com/areyouanand/anatej-photo-editor](https://github.com/areyouanand/anatej-photo-editor)**
+
 **Anatej Photo Editor** is an offline portrait and film studio for Android. Scanning,
 segmentation, relighting, grading, LUTs and export all run on the phone. The manifest
 declares **no INTERNET permission**.
@@ -58,7 +62,7 @@ The theme now lives in **Settings**, reachable only from the home screen.
   floating − / × / + control at the right edge. Tapping the multiplier resets to 1×.
 - **Hold to compare.** Press and hold the preview to temporarily reveal the original;
   release to return to the grade. The LIVE GRADE chip still toggles a persistent compare.
-- **Matched export.** JPEG at 95% to `Pictures/Anatej` via MediaStore, up to 3000 px,
+- **Matched export.** JPEG at a user-set quality (70–100%, default 95%, configurable in Settings) to `Pictures/Anatej` via MediaStore, up to 3000 px,
   including adjustments, look, LUT, depth relight, vignette and grain.
 - **Scroll-safe sliders.** Slider gestures claim only horizontal drags; vertical drags are
   left to the surrounding panel, so scrolling from a slider no longer changes its value.
