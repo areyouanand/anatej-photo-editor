@@ -43,6 +43,8 @@ object PhotoRenderer {
         val fade = (adjustments.fade + stock.fade).coerceIn(0f, 1f)
         val vignette = (adjustments.vignette + stock.vignette).coerceIn(0f, 1f)
         val grain = (adjustments.grain + stock.grain).coerceIn(0f, 1f)
+        val sharpness = (adjustments.sharpness + stock.sharpness).coerceIn(-1f, 1f)
+        val bloom = (adjustments.bloom + stock.bloom).coerceIn(0f, 1f)
 
         val out = scaleBitmap(source, maxDim)
         val w = out.width
@@ -205,6 +207,10 @@ object PhotoRenderer {
             }
         }
 
+        if (bakeEffects && (sharpness > 0.01f || sharpness < -0.01f || bloom > 0.01f)) {
+            applyEnhancements(pixels, w, h, sharpness, bloom)
+        }
+
         out.setPixels(pixels, 0, w, 0, 0, w, h)
         return out
     }
@@ -287,6 +293,78 @@ object PhotoRenderer {
             }
         }
         return result
+    }
+
+    /** Unsharp mask + highlight bloom on the baked pixel buffer. */
+    private fun applyEnhancements(
+        pixels: IntArray,
+        w: Int,
+        h: Int,
+        sharpness: Float,
+        bloom: Float
+    ) {
+        val r = FloatArray(w * h)
+        val g = FloatArray(w * h)
+        val b = FloatArray(w * h)
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            r[i] = ((c shr 16) and 0xFF).toFloat()
+            g[i] = ((c shr 8) and 0xFF).toFloat()
+            b[i] = (c and 0xFF).toFloat()
+        }
+        val br = blurChannel(r, w, h, 2)
+        val bg = blurChannel(g, w, h, 2)
+        val bb = blurChannel(b, w, h, 2)
+        val cr = blurChannel(br, w, h, 2)
+        val cg = blurChannel(bg, w, h, 2)
+        val cb = blurChannel(bb, w, h, 2)
+        for (i in pixels.indices) {
+            var ro = r[i]; var go = g[i]; var bo = b[i]
+            if (sharpness > 0.01f) {
+                val k = sharpness * 1.6f
+                ro += k * (ro - br[i])
+                go += k * (go - bg[i])
+                bo += k * (bo - bb[i])
+            } else if (sharpness < -0.01f) {
+                val k = -sharpness * 0.7f
+                ro = ro * (1f - k) + br[i] * k
+                go = go * (1f - k) + bg[i] * k
+                bo = bo * (1f - k) + bb[i] * k
+            }
+            if (bloom > 0.01f) {
+                // Highlight-weighted soft glow: blurrier pass (cr/cg/cb) added under.
+                val gl = (0.2126f * ro + 0.7152f * go + 0.0722f * bo) / 255f
+                val weight = bloom * 0.42f * (gl * gl)
+                ro += cr[i] * weight
+                go += cg[i] * weight
+                bo += cb[i] * weight
+            }
+            pixels[i] = (0xFF shl 24) or (ro.roundToInt().coerceIn(0, 255) shl 16) or
+                (go.roundToInt().coerceIn(0, 255) shl 8) or bo.roundToInt().coerceIn(0, 255)
+        }
+    }
+
+    private fun blurChannel(src: FloatArray, w: Int, h: Int, radius: Int): FloatArray {
+        val horiz = FloatArray(w * h)
+        val win = (radius * 2 + 1).toFloat()
+        for (y in 0 until h) {
+            var sum = 0f
+            for (i in -radius..radius) sum += src[y * w + i.coerceIn(0, w - 1)]
+            for (x in 0 until w) {
+                horiz[y * w + x] = sum / win
+                sum += src[y * w + (x + radius + 1).coerceIn(0, w - 1)] - src[y * w + (x - radius).coerceIn(0, w - 1)]
+            }
+        }
+        val out = FloatArray(w * h)
+        for (x in 0 until w) {
+            var sum = 0f
+            for (i in -radius..radius) sum += horiz[i.coerceIn(0, h - 1) * w + x]
+            for (y in 0 until h) {
+                out[y * w + x] = sum / win
+                sum += horiz[(y + radius + 1).coerceIn(0, h - 1) * w + x] - horiz[(y - radius).coerceIn(0, h - 1) * w + x]
+            }
+        }
+        return out
     }
 
     private fun scaleBitmap(source: Bitmap, maxDim: Int): Bitmap {

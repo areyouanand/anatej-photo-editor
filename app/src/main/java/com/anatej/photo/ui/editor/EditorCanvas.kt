@@ -72,6 +72,7 @@ fun EditorCanvas(
     subjectMask: Bitmap?,
     relightOverlay: Bitmap?,
     relightShadow: Bitmap?,
+    bloomOverlay: Bitmap? = null,
     compare: Boolean,
     lightEditable: Boolean,
     showMask: Boolean = false,
@@ -88,6 +89,7 @@ fun EditorCanvas(
     val displayImage = remember(display) { display.asImageBitmap() }
     val maskImage = remember(subjectMask) { subjectMask?.asImageBitmap() }
     val overlayImage = remember(relightOverlay) { relightOverlay?.asImageBitmap() }
+    val bloomImage = remember(bloomOverlay) { bloomOverlay?.asImageBitmap() }
     val shadowImage = remember(relightShadow) { relightShadow?.asImageBitmap() }
     val noise = rememberNoiseImage()
     val stock = remember(look, lookStrength) { look.scaled(lookStrength) }
@@ -98,6 +100,8 @@ fun EditorCanvas(
     }
     val vignette = (adjustments.vignette + stock.vignette).coerceIn(0f, 1f)
     val grain = (adjustments.grain + stock.grain).coerceIn(0f, 1f)
+    val sharpness = (adjustments.sharpness + stock.sharpness).coerceIn(-1f, 1f)
+    val bloom = (adjustments.bloom + stock.bloom).coerceIn(0f, 1f)
     val lightOn = light.enabled && !compare
     val useMask = light.subjectOnly && maskImage != null
 
@@ -406,6 +410,33 @@ fun EditorCanvas(
                         1.dp.toPx()
                     )
                     drawCircle(tokens.accent, radius = 2.5.dp.toPx(), center = reticle)
+                }
+
+                if (bloomImage != null && (bloom > 0.01f || sharpness > 0.01f)) {
+                    if (bloom > 0.01f) {
+                        drawImage(
+                            image = bloomImage,
+                            srcOffset = IntOffset.Zero,
+                            srcSize = IntSize(bloomImage.width, bloomImage.height),
+                            dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
+                            dstSize = IntSize(rect.width.roundToInt(), rect.height.roundToInt()),
+                            alpha = (bloom * 0.35f).coerceIn(0f, 0.35f),
+                            blendMode = BlendMode.Screen,
+                            filterQuality = FilterQuality.Medium
+                        )
+                    }
+                    if (sharpness > 0.01f) {
+                        drawImage(
+                            image = bloomImage,
+                            srcOffset = IntOffset.Zero,
+                            srcSize = IntSize(bloomImage.width, bloomImage.height),
+                            dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
+                            dstSize = IntSize(rect.width.roundToInt(), rect.height.roundToInt()),
+                            alpha = (sharpness * 0.5f).coerceIn(0f, 0.5f),
+                            blendMode = BlendMode.Overlay,
+                            filterQuality = FilterQuality.Medium
+                        )
+                    }
                 }
 
                 if (vignette > 0f) {

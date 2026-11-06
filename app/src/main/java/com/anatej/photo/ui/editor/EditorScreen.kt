@@ -299,6 +299,7 @@ private fun PreviewArea(
                 subjectMask = state.subjectMask,
                 relightOverlay = state.relightOverlay,
                 relightShadow = state.relightShadow,
+                bloomOverlay = state.bloomOverlay,
                 compare = state.compare || holdCompare,
                 lightEditable = lightEditable,
                 showMask = showMask,
@@ -635,6 +636,15 @@ private fun AutoPanel(state: EditorUiState, viewModel: EditorViewModel) {
         }
 
         Spacer(Modifier.height(12.dp))
+
+        ValueSlider(
+            label = "Auto rescue strength",
+            value = state.autoRescueStrength,
+            range = 0.3f..2f,
+            onChange = viewModel::setAutoRescueStrength,
+            format = { "${(it * 100).roundToInt()}%" },
+            enabled = state.source != null
+        )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AnatejButton(
@@ -1147,6 +1157,20 @@ private fun AdjustPanel(state: EditorUiState, viewModel: EditorViewModel) {
             value = adjustments.grain,
             range = 0f..1f,
             onChange = { value -> viewModel.updateAdjustments("grain") { it.copy(grain = value) } },
+            format = ::percent
+        )
+        ValueSlider(
+            label = "Sharpness",
+            value = adjustments.sharpness,
+            range = -1f..1f,
+            onChange = { value -> viewModel.updateAdjustments("sharpness") { it.copy(sharpness = value) } },
+            format = ::percent
+        )
+        ValueSlider(
+            label = "Bloom",
+            value = adjustments.bloom,
+            range = 0f..1f,
+            onChange = { value -> viewModel.updateAdjustments("bloom") { it.copy(bloom = value) } },
             format = ::percent
         )
         Spacer(Modifier.height(10.dp))

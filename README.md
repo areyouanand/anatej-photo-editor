@@ -48,6 +48,7 @@ The theme now lives in **Settings**, reachable only from the home screen.
 - **Subject-aware Auto-rescue.** Whole-frame histograms no longer over-lift a lit face on
   a dark background; exposure is anchored to detected skin/subject luminance, with
   highlight protection for non-portrait frames.
+- **Authentic camera looks.** Rebuilt Fujifilm/Nikon/Hasselblad stocks with per-stock grain, vignette, unsharp sharpness and highlight bloom; Adjust also exposes Sharpness and Bloom.
 - **Portrait light (OPPO-style simple first).** The panel opens on a single 0–100
   *Brighten face* slider that auto-places on the subject. Advanced tools (direction pad,
   six key presets, radius/softness/fill sliders, bipolar warmth) sit behind a toggle.

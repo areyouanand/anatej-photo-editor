@@ -15,11 +15,14 @@ data class Adjustments(
     val warmth: Float = 0f,        // -1 (cool) .. +1 (warm)
     val fade: Float = 0f,          // 0..1 lifted blacks
     val vignette: Float = 0f,      // 0..1
-    val grain: Float = 0f          // 0..1
+    val grain: Float = 0f,         // 0..1
+    val sharpness: Float = 0f,     // -1..+1 unsharp mask
+    val bloom: Float = 0f          // 0..1 soft highlight glow
 ) {
     val isNeutral: Boolean
         get() = exposure == 0f && contrast == 0f && saturation == 0f &&
-            warmth == 0f && fade == 0f && vignette == 0f && grain == 0f
+            warmth == 0f && fade == 0f && vignette == 0f && grain == 0f &&
+            sharpness == 0f && bloom == 0f
 
     companion object {
         val Neutral = Adjustments()
@@ -71,7 +74,9 @@ data class Look(
     val warmth: Float = 0f,
     val fade: Float = 0f,
     val vignette: Float = 0f,
-    val grain: Float = 0f
+    val grain: Float = 0f,
+    val sharpness: Float = 0f,
+    val bloom: Float = 0f
 ) {
     fun scaled(strength: Float): Look {
         val s = strength.coerceIn(0f, 1f)
@@ -82,7 +87,9 @@ data class Look(
             warmth = warmth * s,
             fade = fade * s,
             vignette = vignette * s,
-            grain = grain * s
+            grain = grain * s,
+            sharpness = sharpness * s,
+            bloom = bloom * s
         )
     }
 
@@ -95,7 +102,9 @@ data class Look(
             warmth = l.warmth,
             fade = l.fade,
             vignette = l.vignette,
-            grain = l.grain
+            grain = l.grain,
+            sharpness = l.sharpness,
+            bloom = l.bloom
         )
     }
 }
@@ -110,30 +119,37 @@ object Looks {
 
     val all: List<Look> = listOf(
         Original,
-        Look("core.vivid", "Vivid", LookSeries.Basic, "Punchy colour, crisp edges.", saturation = 0.30f, contrast = 0.13f),
-        Look("core.soft", "Soft", LookSeries.Basic, "Airy highlights, gentle roll-off.", contrast = -0.18f, fade = 0.16f, warmth = 0.08f),
-        Look("core.mono", "Mono", LookSeries.Basic, "Neutral silver print.", saturation = -1f, contrast = 0.18f),
-        Look("core.noir", "Noir", LookSeries.Basic, "Deep blacks, hard contrast.", saturation = -1f, contrast = 0.40f, vignette = 0.34f, grain = 0.20f),
-        Look("core.fade", "Fade", LookSeries.Basic, "Matte, lifted blacks.", contrast = -0.14f, saturation = -0.10f, fade = 0.46f),
+        // Basic
+        Look("core.vivid", "Vivid", LookSeries.Basic, "Digital punch: strong colour, crisp edges.", saturation = 0.34f, contrast = 0.16f, sharpness = 0.30f, vignette = 0.06f),
+        Look("core.soft", "Soft", LookSeries.Basic, "Airy highlights, gentle roll-off.", contrast = -0.16f, fade = 0.16f, warmth = 0.08f, bloom = 0.18f, sharpness = -0.12f),
+        Look("core.mono", "Mono", LookSeries.Basic, "Silver print: neutral, micro-contrast.", saturation = -1f, contrast = 0.18f, sharpness = 0.22f, grain = 0.06f),
+        Look("core.noir", "Noir", LookSeries.Basic, "Deep blacks, hard contrast, heavy falloff.", saturation = -1f, contrast = 0.42f, sharpness = 0.20f, vignette = 0.34f, grain = 0.20f),
+        Look("core.fade", "Fade", LookSeries.Basic, "Matte lifted blacks, halation bloom.", contrast = -0.14f, saturation = -0.10f, fade = 0.46f, bloom = 0.28f, grain = 0.10f, sharpness = -0.10f),
 
-        Look("fuji.provia", "PROVIA", LookSeries.Fujifilm, "Balanced, true-to-life transparency.", saturation = 0.10f, contrast = 0.08f, warmth = -0.02f),
-        Look("fuji.velvia", "VELVIA", LookSeries.Fujifilm, "Saturated landscapes, deep skies.", saturation = 0.40f, contrast = 0.22f, warmth = 0.05f, vignette = 0.12f),
-        Look("fuji.chrome", "CLASSIC CHROME", LookSeries.Fujifilm, "Muted documentary colour.", saturation = -0.24f, contrast = 0.12f, warmth = -0.08f, fade = 0.08f, grain = 0.06f),
-        Look("fuji.neg", "CLASSIC NEG", LookSeries.Fujifilm, "Warm shadows, editorial skin.", saturation = -0.08f, contrast = -0.04f, warmth = 0.16f, fade = 0.22f, grain = 0.12f),
-        Look("fuji.astia", "ASTIA", LookSeries.Fujifilm, "Soft contrast for portraits.", saturation = 0.08f, contrast = -0.06f, warmth = 0.10f, fade = 0.05f),
-        Look("fuji.acros", "ACROS", LookSeries.Fujifilm, "Fine-grain monochrome.", saturation = -1f, contrast = 0.26f, grain = 0.16f, vignette = 0.10f),
+        // Fujifilm stocks — colour science, tone curve, grain/sharp character
+        Look("fuji.provia", "PROVIA", LookSeries.Fujifilm, "Balanced transparency. Clean detail.", saturation = 0.10f, contrast = 0.08f, warmth = -0.02f, sharpness = 0.12f, vignette = 0.05f, bloom = 0.04f),
+        Look("fuji.velvia", "VELVIA", LookSeries.Fujifilm, "Saturated landscape dye. Deep skies.", saturation = 0.44f, contrast = 0.26f, warmth = 0.05f, sharpness = 0.38f, vignette = 0.14f, bloom = 0.03f),
+        Look("fuji.chrome", "CLASSIC CHROME", LookSeries.Fujifilm, "Muted documentary colour, film grain.", saturation = -0.24f, contrast = 0.14f, warmth = -0.08f, fade = 0.08f, grain = 0.10f, sharpness = 0.15f),
+        Look("fuji.neg", "CLASSIC NEG", LookSeries.Fujifilm, "Warm shadows, halation, editorial skin.", saturation = -0.08f, contrast = -0.02f, warmth = 0.16f, fade = 0.22f, grain = 0.14f, bloom = 0.16f, sharpness = -0.05f),
+        Look("fuji.astia", "ASTIA", LookSeries.Fujifilm, "Soft portrait slide. Flattering skin.", saturation = 0.08f, contrast = -0.04f, warmth = 0.10f, fade = 0.05f, bloom = 0.10f, sharpness = -0.06f),
+        Look("fuji.acros", "ACROS", LookSeries.Fujifilm, "Fine-grain monochrome emulsion.", saturation = -1f, contrast = 0.28f, grain = 0.18f, sharpness = 0.32f, vignette = 0.10f, bloom = 0.05f),
+        Look("fuji.rt", "REALA ACE", LookSeries.Fujifilm, "Modern neg: accurate, gentle highlights.", saturation = 0.02f, contrast = 0.02f, warmth = 0.02f, fade = 0.04f, bloom = 0.06f, sharpness = 0.05f),
 
-        Look("nikon.standard", "NIKON STANDARD", LookSeries.Nikon, "Clean, slightly cool rendering.", saturation = 0.04f, contrast = 0.14f, warmth = -0.03f),
-        Look("nikon.neutral", "NEUTRAL", LookSeries.Nikon, "Flat starting point for grading.", saturation = -0.08f, contrast = 0.02f),
-        Look("nikon.vivid", "VIVID", LookSeries.Nikon, "Hard colour, confident contrast.", saturation = 0.30f, contrast = 0.20f, warmth = -0.04f),
-        Look("nikon.mono", "MONOCHROME", LookSeries.Nikon, "Crisp reportage black and white.", saturation = -1f, contrast = 0.18f),
-        Look("nikon.warm", "NIKKOR WARM", LookSeries.Nikon, "Golden-hour glass.", warmth = 0.18f, saturation = 0.08f, contrast = 0.06f),
+        // Nikon picture controls — clean, low-grain, digital detail
+        Look("nikon.standard", "NIKON STANDARD", LookSeries.Nikon, "Clean, slightly cool rendering.", saturation = 0.04f, contrast = 0.14f, warmth = -0.03f, sharpness = 0.14f, vignette = 0.04f),
+        Look("nikon.neutral", "NEUTRAL", LookSeries.Nikon, "Flat starting point for grading.", saturation = -0.08f, contrast = 0.02f, sharpness = 0.05f),
+        Look("nikon.vivid", "VIVID", LookSeries.Nikon, "Hard colour, confident contrast.", saturation = 0.32f, contrast = 0.22f, warmth = -0.04f, sharpness = 0.34f, vignette = 0.08f),
+        Look("nikon.mono", "MONOCHROME", LookSeries.Nikon, "Crisp reportage black and white.", saturation = -1f, contrast = 0.20f, sharpness = 0.28f, grain = 0.05f),
+        Look("nikon.warm", "NIKKOR WARM", LookSeries.Nikon, "Golden-hour glass. Warm flare.", warmth = 0.18f, saturation = 0.08f, contrast = 0.06f, bloom = 0.12f, sharpness = 0.08f),
+        Look("nikon.flat", "FLAT", LookSeries.Nikon, "Low contrast, lifted shadows for RAW edits.", contrast = -0.18f, saturation = -0.12f, fade = 0.14f, sharpness = 0.05f),
 
-        Look("hasselblad.natural", "NATURAL", LookSeries.Hasselblad, "Hasselblad Natural Colour.", contrast = 0.04f, saturation = 0.03f, warmth = 0.06f),
-        Look("hasselblad.portrait", "PORTRAIT", LookSeries.Hasselblad, "Quiet contrast, luminous skin.", saturation = -0.04f, contrast = -0.07f, warmth = 0.13f, fade = 0.05f),
-        Look("hasselblad.landscape", "LANDSCAPE", LookSeries.Hasselblad, "Open shadows, rich foliage.", saturation = 0.16f, contrast = 0.10f, warmth = 0.04f),
-        Look("hasselblad.bw", "B&W", LookSeries.Hasselblad, "Medium-format monochrome.", saturation = -1f, contrast = 0.20f, grain = 0.08f),
-        Look("hasselblad.skin", "SKIN TONE", LookSeries.Hasselblad, "Warm, lifted, flattering.", warmth = 0.22f, fade = 0.09f, contrast = -0.08f)
+        // Hasselblad natural colour — medium format, luminous, minimal grain
+        Look("hasselblad.natural", "NATURAL", LookSeries.Hasselblad, "Hasselblad Natural Colour.", contrast = 0.04f, saturation = 0.03f, warmth = 0.06f, bloom = 0.08f, sharpness = 0.06f),
+        Look("hasselblad.portrait", "PORTRAIT", LookSeries.Hasselblad, "Quiet contrast, luminous skin.", saturation = -0.04f, contrast = -0.05f, warmth = 0.13f, fade = 0.05f, bloom = 0.15f, sharpness = -0.07f),
+        Look("hasselblad.landscape", "LANDSCAPE", LookSeries.Hasselblad, "Open shadows, rich foliage.", saturation = 0.18f, contrast = 0.10f, warmth = 0.04f, bloom = 0.05f, sharpness = 0.14f),
+        Look("hasselblad.bw", "B&W", LookSeries.Hasselblad, "Medium-format monochrome.", saturation = -1f, contrast = 0.22f, grain = 0.07f, sharpness = 0.16f),
+        Look("hasselblad.skin", "SKIN TONE", LookSeries.Hasselblad, "Warm, lifted, flattering.", warmth = 0.22f, fade = 0.09f, contrast = -0.08f, bloom = 0.14f, sharpness = -0.05f),
+        Look("hasselblad.x2d", "X2D", LookSeries.Hasselblad, "X2D flagship: surgical detail.", contrast = 0.06f, saturation = 0.05f, warmth = 0.03f, sharpness = 0.24f, vignette = 0.06f)
     )
 
     val byId: Map<String, Look> = all.associateBy { it.id }
@@ -216,6 +232,8 @@ data class EditorUiState(
     val relightNormals: Bitmap? = null,
     val relightOverlay: Bitmap? = null,
     val relightShadow: Bitmap? = null,
+    val bloomOverlay: Bitmap? = null,
+    val autoRescueStrength: Float = 1f,
     val maskScanning: Boolean = false,
     val thumbs: Map<String, Bitmap> = emptyMap(),
     val loading: Boolean = false,

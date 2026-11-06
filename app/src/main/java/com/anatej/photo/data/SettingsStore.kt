@@ -27,6 +27,10 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SUBJECT_MASK, true)
         set(value) = prefs.edit().putBoolean(KEY_SUBJECT_MASK, value).apply()
 
+    var autoRescueStrength: Float
+        get() = prefs.getFloat(KEY_RESCUE, 1f).coerceIn(0.3f, 2f)
+        set(value) = prefs.edit().putFloat(KEY_RESCUE, value.coerceIn(0.3f, 2f)).apply()
+
     var exportQuality: Int
         get() = prefs.getInt(KEY_EXPORT_QUALITY, 95).coerceIn(70, 100)
         set(value) = prefs.edit().putInt(KEY_EXPORT_QUALITY, value.coerceIn(70, 100)).apply()
@@ -40,5 +44,6 @@ class SettingsStore(context: Context) {
         const val KEY_SCAN_ON_IMPORT = "scan_on_import"
         const val KEY_SUBJECT_MASK = "subject_masking"
         const val KEY_EXPORT_QUALITY = "export_quality"
+        const val KEY_RESCUE = "auto_rescue_strength"
     }
 }

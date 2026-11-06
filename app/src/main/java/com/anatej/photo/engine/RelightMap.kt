@@ -209,6 +209,52 @@ object RelightMap {
         return out
     }
 
+    /** Downscaled box-blurred copy used for bloom / sharpen overlays at small size. */
+    fun blurredCopy(source: Bitmap, maxDim: Int = 384): Bitmap {
+        val longest = maxOf(source.width, source.height).coerceAtLeast(1)
+        val scale = min(1f, maxDim.toFloat() / longest)
+        val w = (source.width * scale).roundToInt().coerceAtLeast(8)
+        val h = (source.height * scale).roundToInt().coerceAtLeast(8)
+        val scaled = if (source.width == w && source.height == h) source else Bitmap.createScaledBitmap(source, w, h, true)
+        val pixels = IntArray(w * h)
+        scaled.getPixels(pixels, 0, w, 0, 0, w, h)
+        if (scaled !== source) scaled.recycle()
+        val r = FloatArray(w * h); val g = FloatArray(w * h); val b = FloatArray(w * h)
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            r[i] = ((c shr 16) and 0xFF).toFloat()
+            g[i] = ((c shr 8) and 0xFF).toFloat()
+            b[i] = (c and 0xFF).toFloat()
+        }
+        val br = blurR(r, w, h, 3); val bg = blurR(g, w, h, 3); val bb = blurR(b, w, h, 3)
+        val out = IntArray(w * h)
+        for (i in out.indices) out[i] = (0xFF shl 24) or (br[i].roundToInt().coerceIn(0, 255) shl 16) or (bg[i].roundToInt().coerceIn(0, 255) shl 8) or bb[i].roundToInt().coerceIn(0, 255)
+        return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+    }
+
+    private fun blurR(src: FloatArray, w: Int, h: Int, radius: Int): FloatArray {
+        val horiz = FloatArray(w * h)
+        val win = (radius * 2 + 1).toFloat()
+        for (y in 0 until h) {
+            var sum = 0f
+            for (i in -radius..radius) sum += src[y * w + i.coerceIn(0, w - 1)]
+            for (x in 0 until w) {
+                horiz[y * w + x] = sum / win
+                sum += src[y * w + (x + radius + 1).coerceIn(0, w - 1)] - src[y * w + (x - radius).coerceIn(0, w - 1)]
+            }
+        }
+        val out = FloatArray(w * h)
+        for (x in 0 until w) {
+            var sum = 0f
+            for (i in -radius..radius) sum += horiz[i.coerceIn(0, h - 1) * w + x]
+            for (y in 0 until h) {
+                out[y * w + x] = sum / win
+                sum += horiz[(y + radius + 1).coerceIn(0, h - 1) * w + x] - horiz[(y - radius).coerceIn(0, h - 1) * w + x]
+            }
+        }
+        return out
+    }
+
     /** Bipolar warmth: -1 is cool headlight-neutral, +1 is amber tungsten. */
     fun warmRgb(warmth: Float): Triple<Float, Float, Float> {
         val w = warmth.coerceIn(-1f, 1f)

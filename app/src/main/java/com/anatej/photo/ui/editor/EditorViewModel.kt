@@ -43,7 +43,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private val settingsStore = SettingsStore(application)
 
-    private val _state = MutableStateFlow(EditorUiState())
+    private val _state = MutableStateFlow(EditorUiState(autoRescueStrength = settingsStore.autoRescueStrength))
     val state: StateFlow<EditorUiState> = _state.asStateFlow()
 
     private val resolver = application.contentResolver
@@ -61,8 +61,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var depthJob: Job? = null
     private var lutJob: Job? = null
     private var overlayJob: Job? = null
+    private var blurJob: Job? = null
     private var previewGeneration = 0
     private var overlayGeneration = 0
+    private var blurGeneration = 0
     private var normalGeneration = 0
     private var depthMap: DepthEstimator.DepthMap? = null
 
@@ -92,6 +94,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     relightNormals = null,
                     relightOverlay = null,
                     relightShadow = null,
+                    bloomOverlay = null,
                     maskScanning = false,
                     lutPreview = null,
                     compare = false,
@@ -143,6 +146,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
             scheduleLutPreview()
             scheduleRelightOverlay()
+            scheduleBlurOverlay()
             prepareNormals(photo.bitmap, null)
             estimateDepth(photo.bitmap)
             if (subjectMasking) {
@@ -242,6 +246,26 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun scheduleBlurOverlay() {
+        val snapshot = _state.value
+        val source = snapshot.source
+        val bloom = (snapshot.adjustments.bloom + snapshot.look.scaled(snapshot.lookStrength).bloom)
+        val sharpness = (snapshot.adjustments.sharpness + snapshot.look.scaled(snapshot.lookStrength).sharpness)
+        if (source == null || (bloom <= 0.01f && sharpness <= 0.01f)) {
+            if (snapshot.bloomOverlay != null) _state.update { it.copy(bloomOverlay = null) }
+            return
+        }
+        val generation = ++blurGeneration
+        blurJob?.cancel()
+        blurJob = viewModelScope.launch {
+            delay(24)
+            val overlay = withContext(Dispatchers.Default) { RelightMap.blurredCopy(source, 384) }
+            if (generation == blurGeneration && _state.value.source === source) {
+                _state.update { it.copy(bloomOverlay = overlay) }
+            }
+        }
+    }
+
     private fun record(key: String, force: Boolean = false) {
         if (_state.value.source == null) return
         val now = SystemClock.elapsedRealtime()
@@ -281,6 +305,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
         scheduleLutPreview()
         scheduleRelightOverlay()
+        scheduleBlurOverlay()
     }
 
     fun undo() {
@@ -306,6 +331,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun updateAdjustments(key: String, transform: (Adjustments) -> Adjustments) {
         record(key)
         _state.update { it.copy(adjustments = transform(it.adjustments)) }
+        scheduleBlurOverlay()
     }
 
     fun resetAdjustments() {
@@ -409,22 +435,28 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         scheduleRelightOverlay()
     }
 
+    fun setAutoRescueStrength(strength: Float) {
+        settingsStore.autoRescueStrength = strength.coerceIn(0.3f, 2f)
+        _state.update { it.copy(autoRescueStrength = settingsStore.autoRescueStrength) }
+    }
+
     fun autoEnhance() {
         val analysis = _state.value.analysis ?: return
         record("auto-enhance", force = true)
         _state.update { state ->
+            val k = state.autoRescueStrength.coerceIn(0.3f, 2f)
             val adjustments = Adjustments(
-                exposure = analysis.suggestedExposure.coerceIn(-2f, 2f),
-                contrast = analysis.suggestedContrast,
-                saturation = analysis.suggestedSaturation,
-                warmth = if (analysis.skinFraction > 0.03f) 0.06f else 0f
+                exposure = (analysis.suggestedExposure * k).coerceIn(-2f, 2f),
+                contrast = (analysis.suggestedContrast * k).coerceIn(-1f, 1f),
+                saturation = (analysis.suggestedSaturation * k).coerceIn(-1f, 1f),
+                warmth = if (analysis.skinFraction > 0.03f) 0.06f * k else 0f
             )
             val light = if (analysis.subjectConfidence >= 0.25f && analysis.subjectLuma < 0.45f) {
                 PortraitLight(
                     enabled = true,
                     x = analysis.subjectX,
                     y = (analysis.subjectY - 0.06f).coerceIn(0.06f, 0.94f),
-                    intensity = (24f + (0.45f - analysis.subjectLuma) * 55f).coerceIn(22f, 44f),
+                    intensity = ((24f + (0.45f - analysis.subjectLuma) * 55f) * k).coerceIn(0f, 100f),
                     radius = 0.58f,
                     warmth = 0.30f
                 )
