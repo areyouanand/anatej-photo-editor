@@ -14,8 +14,8 @@ device: simplified 0–100 Brighten face slider (OPPO-style single control), adv
 collapsed behind a toggle. The displayed 0–100 scale tops out at the old 30% strength, so
 even 100 feels gentle. Added an Export quality setting (70–100%, default 95%) and About
 credits (@areyouanand + GitHub link). Pushed to `areyouanand/anatej-photo-editor` (master).
-No app crash in logcat; the phone was locked for the Settings UI check. The emulator is
-closed. Test media was removed.
+The user verified the Settings quality slider and About credits manually on the phone.
+No app crash in logcat. The emulator is closed. Test media was removed.
 
 ---
 
@@ -161,7 +161,7 @@ The editor header is reserved for back, undo/redo, and save.
 | Device coverage | v0.3 UI pass on API 36 emulator and final 0.3.0 install + zoom/pan/hold/export smoke test on CPH2841/Android 16 |
 | Softbox relight | Presets (Natural/Rembrandt/Butterfly/Loop/Side/Top) and AZ/EL direction pad change the shading; 91% intensity stays readable under soft clip; export matches preview pixel-for-pixel in structure |
 | Light UX | VIEW MASK orange tint, interactive DRAG LIGHT / LIGHT OFF / VIEW MASK / LIGHT⇄PAN chips, labeled SUBJECT MASKING + Background spill sliders, scrollable Light panel (360 dp), slider haptic detent ticks |
-| Export quality + About | Settings stores `exportQuality` (70–100%, default 95%); `saveToGallery` compresses with it. About shows `DEVELOPER: @areyouanand` and a tappable `github.com/areyouanand/anatej-photo-editor` link. |
+| Export quality + About | Settings stores `exportQuality` (70–100%, default 95%); `saveToGallery` compresses with it. About shows `DEVELOPER: @areyouanand` and a tappable `github.com/areyouanand/anatej-photo-editor` link. **User-verified manually on device.** |
 | Simple brighten | Light panel opens on one **Brighten face** slider (`EditorViewModel.brightenFace` auto-places on the subject and enables the key) + Auto-brighten; presets/direction pad/sliders sit behind **Advanced tools**. Display scale is 0–100, but the internal model maps it to `(intensity/100)·30%` of full relight — 100 behaves like the old 30% mark. |
 | Emulator | Stopped after the pass at the user's request; no emulator process/window remains |
 
