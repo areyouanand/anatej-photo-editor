@@ -7,7 +7,7 @@
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `27226de55e7dacfeded4e0073def8ae3288c10c77189d702871ae78b1cb2e230`
+**SHA-256:** `19c41a98264a20f572039792aff40f1e04805fa0e3c22c083e507a5fca38dd83`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
 **State:** latest 0.4.0 APK (SHA above) installed on the CPH2841 and verified:
 1. **Interactive gallery-style crop** — draggable L-corner + edge handles, inside-box pan, 7 aspect locks (`FREE`/`ORIG`/`1:1`/`4:5`/`3:2`/`16:9`/`9:16`), a ±45° **Straighten** slider with automatic inscribed zoom, Rotate 90°, Flip, and Reset. Leaving the CROP tab shows only the cropped region fitted to the preview (non-destructive).
@@ -40,7 +40,10 @@ This build covers the v0.4 scope on top of v0.3:
 | Straighten | `-45°..+45°`, `straightenZoom()` computes the inscribed scale (transposition-symmetric, capped at 2.6×). Applied with `withTransform(rotate, scale)` in the preview and a real rotation matrix in `cropBitmap` for export. |
 | Adaptive preview | `PreviewArea` uses `BoxWithConstraints` to size the frame to the photo/crop/square aspect, clamped to a 140/160 dp minimum, so no black letterboxing remains. |
 | Looks | `Adjustments`/`Look` gained `sharpness`, `bloom`, `halation`, `shadowTint`, `highlightTint`; 6 stock series + 31 looks; preview renders split-tone via one extra matrix and halation through a warm matrix on the blurred overlay; export bakes halation in `applyEnhancements`. |
-| 3D LUT | `LookSeries.Lut` is a dedicated section. `Lut3D` accepts up to `65³`. `importLuts(List<Uri>)` imports multiple files, `refreshSavedLuts()` scans `files/luts/` **and** `Download/LUTs/`, and each LUT appears as a one-tap pill. |
+| 3D LUT | `LookSeries.Lut` is a dedicated section. `Lut3D` accepts up to `65³`. `importLuts(List<Uri>)` imports multiple files, `refreshSavedLuts()` scans `files/luts/` **and** `Download/LUTs/`, and each LUT appears as a one-tap card. |
+| Favourites | `LookSeries.Favourites` is the first series chip. Every look card and every 3D LUT card carries a `☆` badge (bottom-right) that pins it; look ids and LUT paths are stored as string sets in `SettingsStore` and survive relaunches. The Favourites tab groups *Favourite looks* and *Favourite LUTs* with counts and an empty-state hint. |
+| Look toggle | Tapping the already-applied look disables it and restores the look that was active before it (`lastLookId`), so one tap previews and the second tap reverts. The panel prints **TAP AGAIN TO DISABLE** while a look is applied. |
+| LUT previews | `scheduleLutThumbs()` renders each saved `.cube` over a 110 px base of the current frame and publishes thumbnails progressively, so LUT cards look like stock cards. `CubeLutParser` was rewritten to parse straight into a preallocated `FloatArray` (no boxing / per-line token lists), which cut per-file parse time enough for the 45-file library to fill in a few seconds. |
 | Tone | New `highlights`, `shadows`, `whites`, `blacks` sliders (luminance-weighted recovery in export, slope/offset approximation in the preview matrix). |
 | EXIF | On import, 14 safe tags are captured (dates, make/model, aperture, shutter, ISO, focal length, white balance, flash, lens). Written to the exported JPEG and the share cache; `TAG_ORIENTATION` is normalised. GPS is never read. |
 | Share | `FileProvider` (`${applicationId}.fileprovider`, `res/xml/file_paths.xml` → `cache/shared/`), `share()` renders → caches → launches the system chooser. |
@@ -227,12 +230,15 @@ The editor header is reserved for back, undo/redo, and save.
 | Rotate / Flip / Reset | `↻ 90°`, `⇄ Flip`, `Reset` row in the CROP panel, all undoable. |
 | Adaptive preview | 960×540 source renders in a 16:9 card with no dead space; portrait, square and cropped ratios each size the card accordingly. CROP tab removes the card corner radius so handles stay visible. |
 | Multi-effect looks | 31 looks across 6 series. `KODAK 2383`, `800T NIGHT`, `BLOCKBUSTER`, `PRO-MIST 1/4`, `BLEACH BYPASS`, `INDIE 35MM`, `SIN CITY NOIR`, `PORTRA 400`, `GOLD 200`, `EKTAR 100`, `TRI-X 400`, `ILFORD HP5`, `NOSTALGIC NEG`, `ETERNA CINE`, `LEICA CHROME`, `MONOCHROM`, `X2D STUDIO` etc. Each carries grain/bloom/halation/split-tone/vignette/matte; the panel prints the active recipe tags. |
-| 3D LUT section | `3D LUT · CUBE` is its own series chip; on-device it reported **45 LUTs available** from `Download/LUTs` + `files/luts`. Multi-select import, one-tap pills, strength slider default 100%. |
+| 3D LUT section | `3D LUT · CUBE` is its own series chip; on-device it reported **45 LUTs available** from `Download/LUTs` + `files/luts`. Multi-select import, thumbnail cards, strength slider default 100%. |
+| Favourites | Starred `HNCS PORTRAIT` and confirmed it appears under **FAVOURITE LOOKS** with a count; the star toggles from the card badge without applying the look. LUT favourites use the same badge. |
+| Look toggle | Tapped `HNCS PORTRAIT` (applied, title + recipe tags + `TAP AGAIN TO DISABLE` shown), tapped again → reverted to `Original` without leaving the section. |
+| LUT thumbnails | The LUT grid renders distinct graded thumbnails per `.cube` (aerosol/aerocolor, Agfa Vista, Ektachrome, …) instead of placeholder `CUBE` tiles. |
 | Tone sliders | Highlights / Shadows / Whites / Blacks added to ADJUST alongside Film halation and the two split-tone sliders. |
 | EXIF | Safe tags round-trip to export; GPS never read; toggle in Settings (default on). |
 | Share | `↗` button next to SAVE renders to `cache/shared/Anatej_Share.jpg`, exposes it through `${applicationId}.fileprovider`, and opens the system chooser with `FLAG_GRANT_READ_URI_PERMISSION`. |
 | Slider reset | Double-tap any slider label or track to return to its declared default, with haptics. |
-| Unit tests | 18 tests green: `.cube` parsing (incl. `65³`), trilinear endpoints, 1D/incomplete rejection, crop/straighten state, `straightenZoom` symmetry + ceiling, tone-slider matrix offsets, LUT series separation, Square Pic labels. |
+| Unit tests | 19 tests green: `.cube` parsing (incl. `65³`), trilinear endpoints, 1D/incomplete rejection, crop/straighten state, `straightenZoom` symmetry + ceiling, tone-slider matrix offsets, LUT series + Favourites separation, favourite look ids, Square Pic labels. |
 | Emulator | Stopped after the pass at the user's request; no emulator process/window remains |
 
 Test photos/LUT were pushed temporarily and deleted. The app was clean-installed after
@@ -285,7 +291,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Unit tests cover `.cube` parsing (including `65³` tables), trilinear sampling, 1D rejection,
 incomplete-LUT rejection, crop/straighten geometry and `straightenZoom`, the tone-slider
-preview matrix, LUT-series separation and Square Pic labels — **18 tests**.
+preview matrix, LUT/Favourites series separation and Square Pic labels — **19 tests**.
 
 Debug APK size is dominated by ML Kit native libraries for all ABIs. For distribution,
 next step is an App Bundle or ABI splits (`arm64-v8a` covers the test phone).
@@ -329,7 +335,13 @@ next step is an App Bundle or ABI splits (`arm64-v8a` covers the test phone).
   mode, extend the `targetAspect` `when` block, not the canvas.
 - Saved LUTs are merged from `files/luts/` and `Download/LUTs/` by
   `EditorViewModel.refreshSavedLuts()`; the active LUT is also mirrored to
-  `files/luts/active.cube` so it survives a cold start.
+  `files/luts/active.cube` so it survives a cold start. Thumbnails come from
+  `scheduleLutThumbs()` (110 px, progressive) and are invalidated when the source changes.
+- Favourites are two string sets in `SettingsStore` (`favourite_looks`, `favourite_luts`).
+  Look ids must exist in `Looks.byId`; LUT ids are absolute file paths, so a moved file simply
+  drops out of the Favourites tab.
+- `setLook` is a toggle: applying a different look records the previous id in `lastLookId`,
+  and tapping the applied look restores it. Keep that behaviour when touching the panel.
 - EXIF is captured once at import (`sourceExif`) and written at export/share time. Never add
   GPS tags to `SAFE_EXIF_TAGS`.
 - The share flow depends on the `${applicationId}.fileprovider` authority and
@@ -367,8 +379,8 @@ uses the public test portrait and UI chrome.
 - Final 0.4.0 APK installed on the CPH2841 (`3B164J000QB00000`) with SHA above.
   On-device checks passed: landscape 960×540 source in a 16:9 adaptive preview card,
   unclipped crop corner handles with the Straighten slider at `+0.0°`, the dedicated
-  `3D LUT · CUBE` tab reporting **45 LUTs available**, and a near-square crop badge reading
-  `CROP · 1013 × 1013` with the cropped viewport shown on returning to LOOKS.
+  `3D LUT · CUBE` tab reporting **45 LUTs available** with graded thumbnails, a look
+  applying and disabling on a second tap, and a starred look appearing under Favourites.
   No `FATAL EXCEPTION` for `com.anatej.photo` in logcat.
 - **45 `.cube` LUTs are stored at `/sdcard/Download/LUTs/`** on the phone and mirrored into
   the app's private `files/luts/` library. They are open-source; see

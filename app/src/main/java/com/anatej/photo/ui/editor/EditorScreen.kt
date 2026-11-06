@@ -376,9 +376,12 @@ private fun PreviewArea(
                 onLightPosition = { x, y ->
                     viewModel.updateLight("light-position") { it.copy(x = x, y = y) }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (cropEditable) Modifier.padding(14.dp) else Modifier)
             )
 
+            if (!cropEditable) {
             PreviewChip(
                 text = if (state.compare || holdCompare) "ORIGINAL" else "LIVE GRADE",
                 active = !(state.compare || holdCompare),
@@ -427,6 +430,7 @@ private fun PreviewArea(
                 },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp)
             )
+            }
         } else if (state.loading) {
             LoadingPreview()
         } else {
@@ -1464,15 +1468,17 @@ private fun LooksPanel(
     val t = LocalAnatej.current
     var seriesIndex by rememberSaveable { mutableIntStateOf(state.look.series.ordinal) }
     val series = LookSeries.entries[seriesIndex.coerceIn(0, LookSeries.entries.lastIndex)]
-
-    LaunchedEffect(state.look.series) {
-        if (series != LookSeries.Lut) {
-            seriesIndex = state.look.series.ordinal
-        }
+    val favouriteLooks = remember(state.favouriteLooks) {
+        state.favouriteLooks.mapNotNull { Looks.byId[it] }.sortedBy { it.name }
     }
+    val favouriteLuts = remember(state.favouriteLuts, state.savedLuts) {
+        state.savedLuts.filter { it.id in state.favouriteLuts }
+    }
+
     LaunchedEffect(series) {
         if (series == LookSeries.Lut) {
             viewModel.refreshSavedLuts()
+            viewModel.scheduleLutThumbs()
         }
     }
 
@@ -1544,14 +1550,31 @@ private fun LooksPanel(
                 Spacer(Modifier.height(10.dp))
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(state.savedLuts, key = { it.id }) { entry ->
                         val active = state.lut != null && (state.lutName.equals(entry.name, ignoreCase = true) || state.lut.title.equals(entry.name, ignoreCase = true))
-                        PresetChip(
+                        LutCard(
                             name = entry.name,
+                            thumbnail = state.lutThumbs[entry.id],
                             selected = active,
-                            onClick = { viewModel.selectSavedLut(entry) }
+                            favourite = entry.id in state.favouriteLuts,
+                            onClick = { viewModel.selectSavedLut(entry) },
+                            onFavourite = { viewModel.toggleFavouriteLut(entry.id) }
+                        )
+                    }
+                }
+            } else {
+                Spacer(Modifier.height(10.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        PreviewChip(
+                            text = "NO LUTS YET",
+                            active = false,
+                            modifier = Modifier.padding(end = 4.dp)
                         )
                     }
                 }
@@ -1569,6 +1592,94 @@ private fun LooksPanel(
                     defaultValue = 1f
                 )
             }
+        } else if (series == LookSeries.Favourites) {
+            val hasAny = favouriteLooks.isNotEmpty() || favouriteLuts.isNotEmpty()
+            if (!hasAny) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 22.dp)) {
+                    MonoLabel("NO FAVOURITES YET", t.accent)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Tap the ☆ on any look or 3D LUT card to pin it here for one-tap access.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = t.textDim
+                    )
+                }
+            }
+            if (favouriteLooks.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MicroLabel("FAVOURITE LOOKS")
+                    Spacer(Modifier.weight(1f))
+                    MonoLabel("${favouriteLooks.size}", t.accent)
+                }
+                Spacer(Modifier.height(6.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(favouriteLooks, key = { "fav-" + it.id }) { look ->
+                        LookCard(
+                            look = look,
+                            thumbnail = state.thumbs[look.id],
+                            selected = state.look.id == look.id,
+                            favourite = true,
+                            onClick = { viewModel.setLook(look) },
+                            onFavourite = { viewModel.toggleFavouriteLook(look.id) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+            if (favouriteLuts.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MicroLabel("FAVOURITE LUTS")
+                    Spacer(Modifier.weight(1f))
+                    MonoLabel("${favouriteLuts.size}", t.accent)
+                }
+                Spacer(Modifier.height(6.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(favouriteLuts, key = { "fav-lut-" + it.id }) { entry ->
+                        val active = state.lut != null &&
+                            (state.lutName.equals(entry.name, ignoreCase = true) ||
+                                state.lut.title.equals(entry.name, ignoreCase = true))
+                        LutCard(
+                            name = entry.name,
+                            thumbnail = state.lutThumbs[entry.id],
+                            selected = active,
+                            favourite = true,
+                            onClick = { viewModel.selectSavedLut(entry) },
+                            onFavourite = { viewModel.toggleFavouriteLut(entry.id) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+            if (hasAny) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (state.look.id != Looks.Original.id) state.look.name
+                        else state.lutName ?: "Original",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = t.text
+                    )
+                    Spacer(Modifier.weight(1f))
+                    SmallAction(
+                        text = "OPEN ALL LOOKS",
+                        onClick = { seriesIndex = LookSeries.Cinema.ordinal }
+                    )
+                }
+            }
         } else {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 18.dp),
@@ -1579,7 +1690,9 @@ private fun LooksPanel(
                         look = look,
                         thumbnail = state.thumbs[look.id],
                         selected = state.look.id == look.id,
-                        onClick = { viewModel.setLook(look) }
+                        favourite = look.id in state.favouriteLooks,
+                        onClick = { viewModel.setLook(look) },
+                        onFavourite = { viewModel.toggleFavouriteLook(look.id) }
                     )
                 }
             }
@@ -1614,6 +1727,10 @@ private fun LooksPanel(
                     if (recipeTags.isNotEmpty()) {
                         Spacer(Modifier.height(2.dp))
                         MonoLabel(recipeTags.joinToString(" · "), t.accent.copy(alpha = 0.85f))
+                    }
+                    if (state.look.id != Looks.Original.id) {
+                        Spacer(Modifier.height(2.dp))
+                        MonoLabel("TAP AGAIN TO DISABLE", t.textDim.copy(alpha = 0.7f))
                     }
                 }
                 if (state.look.id != Looks.Original.id) {
@@ -1693,7 +1810,9 @@ private fun LookCard(
     look: Look,
     thumbnail: android.graphics.Bitmap?,
     selected: Boolean,
-    onClick: () -> Unit
+    favourite: Boolean = false,
+    onClick: () -> Unit,
+    onFavourite: (() -> Unit)? = null
 ) {
     val t = LocalAnatej.current
     val shape = RoundedCornerShape(t.smallCorner)
@@ -1729,6 +1848,13 @@ private fun LookCard(
                         .background(t.accent)
                 )
             }
+            if (onFavourite != null) {
+                FavouriteBadge(
+                    favourite = favourite,
+                    onClick = onFavourite,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
+                )
+            }
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -1739,6 +1865,108 @@ private fun LookCard(
             overflow = TextOverflow.Ellipsis,
             fontFamily = FontFamily.Monospace,
             fontSize = 8.sp
+        )
+    }
+}
+
+/** Small star toggle pinned to a card corner. Filled = favourited. */
+@Composable
+private fun FavouriteBadge(
+    favourite: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val t = LocalAnatej.current
+    val haptics = LocalHapticFeedback.current
+    Box(
+        modifier = modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.52f))
+            .clickable {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = if (favourite) "★" else "☆",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (favourite) t.accent else Color.White.copy(alpha = 0.82f),
+            fontSize = 12.sp
+        )
+    }
+}
+
+/** A saved .cube rendered through the current frame, with the same affordances as LookCard. */
+@Composable
+private fun LutCard(
+    name: String,
+    thumbnail: android.graphics.Bitmap?,
+    selected: Boolean,
+    favourite: Boolean,
+    onClick: () -> Unit,
+    onFavourite: () -> Unit
+) {
+    val t = LocalAnatej.current
+    val shape = RoundedCornerShape(t.smallCorner)
+    Column(
+        modifier = Modifier
+            .width(72.dp)
+            .clickable { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(60.dp)
+                .clip(shape)
+                .background(t.panelAlt)
+                .border(if (selected) 2.dp else 1.dp, if (selected) t.accent else t.line, shape)
+        ) {
+            if (thumbnail != null) {
+                val image = remember(thumbnail) { thumbnail.asImageBitmap() }
+                Image(
+                    bitmap = image,
+                    contentDescription = name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "CUBE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = t.textDim.copy(alpha = 0.6f),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 8.sp
+                    )
+                }
+            }
+            if (selected) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(t.accent)
+                )
+            }
+            FavouriteBadge(
+                favourite = favourite,
+                onClick = onFavourite,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) t.accent else t.textDim,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 7.sp
         )
     }
 }

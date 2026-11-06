@@ -99,6 +99,7 @@ data class LutFileEntry(
 )
 
 enum class LookSeries(val label: String, val ticker: String) {
+    Favourites("Favourites", "STAR"),
     Cinema("Cinema", "CINE"),
     Fujifilm("Fujifilm", "FUJI"),
     Kodak("Kodak", "FILM"),
@@ -302,6 +303,9 @@ data class EditorUiState(
     val lutStrength: Float = 1f,
     val lutPreview: Bitmap? = null,
     val savedLuts: List<LutFileEntry> = emptyList(),
+    val lutThumbs: Map<String, Bitmap> = emptyMap(),
+    val favouriteLooks: Set<String> = emptySet(),
+    val favouriteLuts: Set<String> = emptySet(),
     val subjectMask: Bitmap? = null,
     val relightNormals: Bitmap? = null,
     val relightOverlay: Bitmap? = null,

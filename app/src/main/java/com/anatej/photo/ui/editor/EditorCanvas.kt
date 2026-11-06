@@ -71,6 +71,14 @@ internal fun straightenZoom(degrees: Float, width: Float, height: Float): Float 
     return (c + ratio * s).coerceIn(1f, 2.6f)
 }
 
+/**
+ * Float-safe clamp. `coerceIn` throws when float rounding makes `max < min` by an
+ * epsilon (e.g. clamping a crop edge to `right - minSize` when `right == minSize`),
+ * so geometry helpers use this instead.
+ */
+private fun clampTo(value: Float, min: Float, max: Float): Float =
+    if (max <= min) min else value.coerceIn(min, max)
+
 private const val HANDLE_NONE = 0
 private const val HANDLE_TL = 1
 private const val HANDLE_TR = 2
@@ -270,8 +278,8 @@ fun EditorCanvas(
                 if (handle == HANDLE_MOVE) {
                     val w = c.width
                     val h = c.height
-                    l = (l + dxNorm).coerceIn(0f, 1f - w)
-                    t = (t + dyNorm).coerceIn(0f, 1f - h)
+                    l = clampTo(l + dxNorm, 0f, 1f - w)
+                    t = clampTo(t + dyNorm, 0f, 1f - h)
                     cropCallback(c.copy(left = l, top = t, right = l + w, bottom = t + h))
                     return
                 }
@@ -279,25 +287,25 @@ fun EditorCanvas(
                 if (lockedRatio <= 0f) {
                     when (handle) {
                         HANDLE_TL -> {
-                            l = (l + dxNorm).coerceIn(0f, r - minSize)
-                            t = (t + dyNorm).coerceIn(0f, b - minSize)
+                            l = clampTo(l + dxNorm, 0f, r - minSize)
+                            t = clampTo(t + dyNorm, 0f, b - minSize)
                         }
                         HANDLE_TR -> {
-                            r = (r + dxNorm).coerceIn(l + minSize, 1f)
-                            t = (t + dyNorm).coerceIn(0f, b - minSize)
+                            r = clampTo(r + dxNorm, l + minSize, 1f)
+                            t = clampTo(t + dyNorm, 0f, b - minSize)
                         }
                         HANDLE_BL -> {
-                            l = (l + dxNorm).coerceIn(0f, r - minSize)
-                            b = (b + dyNorm).coerceIn(t + minSize, 1f)
+                            l = clampTo(l + dxNorm, 0f, r - minSize)
+                            b = clampTo(b + dyNorm, t + minSize, 1f)
                         }
                         HANDLE_BR -> {
-                            r = (r + dxNorm).coerceIn(l + minSize, 1f)
-                            b = (b + dyNorm).coerceIn(t + minSize, 1f)
+                            r = clampTo(r + dxNorm, l + minSize, 1f)
+                            b = clampTo(b + dyNorm, t + minSize, 1f)
                         }
-                        HANDLE_T -> t = (t + dyNorm).coerceIn(0f, b - minSize)
-                        HANDLE_B -> b = (b + dyNorm).coerceIn(t + minSize, 1f)
-                        HANDLE_L -> l = (l + dxNorm).coerceIn(0f, r - minSize)
-                        HANDLE_R -> r = (r + dxNorm).coerceIn(l + minSize, 1f)
+                        HANDLE_T -> t = clampTo(t + dyNorm, 0f, b - minSize)
+                        HANDLE_B -> b = clampTo(b + dyNorm, t + minSize, 1f)
+                        HANDLE_L -> l = clampTo(l + dxNorm, 0f, r - minSize)
+                        HANDLE_R -> r = clampTo(r + dxNorm, l + minSize, 1f)
                     }
                     cropCallback(c.copy(left = l, top = t, right = r, bottom = b))
                 } else {
@@ -307,7 +315,7 @@ fun EditorCanvas(
                         HANDLE_BR, HANDLE_R, HANDLE_B -> {
                             val maxW = min(1f - l, (1f - t) * lockedRatio)
                             val deltaW = if (handle == HANDLE_B) dyNorm * lockedRatio else dxNorm
-                            val newW = (r - l + deltaW).coerceIn(minW.coerceAtMost(maxW), maxW)
+                            val newW = clampTo(r - l + deltaW, minW.coerceAtMost(maxW), maxW)
                             val newH = newW / lockedRatio
                             r = l + newW
                             b = t + newH
@@ -315,21 +323,21 @@ fun EditorCanvas(
                         HANDLE_TL, HANDLE_L, HANDLE_T -> {
                             val maxW = min(r, b * lockedRatio)
                             val deltaW = if (handle == HANDLE_T) -dyNorm * lockedRatio else -dxNorm
-                            val newW = (r - l + deltaW).coerceIn(minW.coerceAtMost(maxW), maxW)
+                            val newW = clampTo(r - l + deltaW, minW.coerceAtMost(maxW), maxW)
                             val newH = newW / lockedRatio
                             l = r - newW
                             t = b - newH
                         }
                         HANDLE_TR -> {
                             val maxW = min(1f - l, b * lockedRatio)
-                            val newW = (r - l + dxNorm).coerceIn(minW.coerceAtMost(maxW), maxW)
+                            val newW = clampTo(r - l + dxNorm, minW.coerceAtMost(maxW), maxW)
                             val newH = newW / lockedRatio
                             r = l + newW
                             t = b - newH
                         }
                         HANDLE_BL -> {
                             val maxW = min(r, (1f - t) * lockedRatio)
-                            val newW = (r - l - dxNorm).coerceIn(minW.coerceAtMost(maxW), maxW)
+                            val newW = clampTo(r - l - dxNorm, minW.coerceAtMost(maxW), maxW)
                             val newH = newW / lockedRatio
                             l = r - newW
                             b = t + newH

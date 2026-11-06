@@ -70,11 +70,22 @@ class EditorModelsTest {
     fun lutSeriesIsItsOwnSectionSeparateFromLookStocks() {
         val lutStocks = Looks.forSeries(LookSeries.Lut)
         assertTrue("3D LUT must not contain baked look presets", lutStocks.isEmpty())
+        assertTrue("Favourites is a UI-only bucket", Looks.forSeries(LookSeries.Favourites).isEmpty())
         // Every real stock series still has content and no look files itself under Lut.
-        LookSeries.entries.filter { it != LookSeries.Lut }.forEach { series ->
-            assertTrue("$series should have looks", Looks.forSeries(series).isNotEmpty())
-        }
+        LookSeries.entries
+            .filter { it != LookSeries.Lut && it != LookSeries.Favourites }
+            .forEach { series ->
+                assertTrue("$series should have looks", Looks.forSeries(series).isNotEmpty())
+            }
         assertTrue(Looks.all.none { it.series == LookSeries.Lut })
+    }
+
+    @Test
+    fun favouriteLookIdsResolveBackToLooks() {
+        val ids = listOf("cine.2383", "kodak.portra400", "core.original")
+        for (id in ids) {
+            assertTrue("$id must resolve from Looks.byId", Looks.byId.containsKey(id))
+        }
     }
 
     @Test

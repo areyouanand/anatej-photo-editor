@@ -49,7 +49,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private val settingsStore = SettingsStore(application)
 
-    private val _state = MutableStateFlow(EditorUiState(autoRescueStrength = settingsStore.autoRescueStrength))
+    private val _state = MutableStateFlow(
+        EditorUiState(
+            autoRescueStrength = settingsStore.autoRescueStrength,
+            favouriteLooks = settingsStore.favouriteLooks,
+            favouriteLuts = settingsStore.favouriteLuts
+        )
+    )
     val state: StateFlow<EditorUiState> = _state.asStateFlow()
 
     private val resolver = application.contentResolver
@@ -65,12 +71,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var lastHistoryKey: String? = null
     private var lastHistoryAt = 0L
 
+    /** Look that was applied before the current one, used by the tap-to-disable toggle. */
+    private var lastLookId: String? = null
+
     private var loadJob: Job? = null
     private var maskJob: Job? = null
     private var depthJob: Job? = null
     private var lutJob: Job? = null
     private var overlayJob: Job? = null
     private var blurJob: Job? = null
+    private var lutThumbJob: Job? = null
+    private var lutThumbGeneration = 0
     private var previewGeneration = 0
     private var overlayGeneration = 0
     private var blurGeneration = 0
@@ -107,6 +118,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     bloomOverlay = null,
                     maskScanning = false,
                     lutPreview = null,
+                    lutThumbs = emptyMap(),
                     compare = false,
                     canUndo = false,
                     canRedo = false
@@ -160,6 +172,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             scheduleLutPreview()
             scheduleRelightOverlay()
             scheduleBlurOverlay()
+            scheduleLutThumbs()
             prepareNormals(photo.bitmap, null)
             estimateDepth(photo.bitmap)
             if (subjectMasking) {
@@ -361,11 +374,31 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setLook(look: Look) {
         record("look", force = true)
+        var reverted = false
         _state.update { state ->
-            state.copy(
-                look = look,
-                lookStrength = if (look.id == Looks.Original.id) 1f else state.lookStrength
-            )
+            // Tapping the already-applied look disables it and restores the look that was
+            // active before, so a single tap is a reversible preview.
+            if (look.id != Looks.Original.id && state.look.id == look.id) {
+                reverted = true
+                val previous = lastLookId
+                    ?.let { Looks.byId[it] }
+                    ?.takeIf { it.id != look.id }
+                    ?: Looks.Original
+                lastLookId = null
+                state.copy(
+                    look = previous,
+                    lookStrength = if (previous.id == Looks.Original.id) 1f else state.lookStrength
+                )
+            } else {
+                if (state.look.id != look.id) lastLookId = state.look.id
+                state.copy(
+                    look = look,
+                    lookStrength = if (look.id == Looks.Original.id) 1f else state.lookStrength
+                )
+            }
+        }
+        if (reverted) {
+            _state.update { it.copy(message = "Look disabled") }
         }
         scheduleBlurOverlay()
     }
@@ -459,12 +492,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateCrop(crop: CropRect) {
         record("crop-drag")
-        val l = crop.left.coerceIn(0f, 0.92f)
-        val t = crop.top.coerceIn(0f, 0.92f)
-        val r = crop.right.coerceIn(l + 0.08f, 1f)
-        val b = crop.bottom.coerceIn(t + 0.08f, 1f)
+        val l = crop.left.coerceIn(0f, 0.90f)
+        val t = crop.top.coerceIn(0f, 0.90f)
+        val r = clampFloat(crop.right, l + 0.08f, 1f)
+        val b = clampFloat(crop.bottom, t + 0.08f, 1f)
         _state.update { it.copy(crop = crop.copy(left = l, top = t, right = r, bottom = b)) }
     }
+
+    private fun clampFloat(value: Float, min: Float, max: Float): Float =
+        if (max <= min) min else value.coerceIn(min, max)
 
     fun setCropAspect(aspectLock: Float) {
         record("crop-aspect", force = true)
@@ -482,10 +518,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 val maxW = if (normRatio >= 1f) 1f else normRatio
                 val maxH = if (normRatio >= 1f) 1f / normRatio else 1f
                 val scale = if (aspectLock < 0f) 1f else curAreaScale.coerceIn(0.55f, 1f)
-                val nw = (maxW * scale).coerceIn(0.08f, 1f)
-                val nh = (maxH * scale).coerceIn(0.08f, 1f)
-                val left = (cx - nw * 0.5f).coerceIn(0f, 1f - nw)
-                val top = (cy - nh * 0.5f).coerceIn(0f, 1f - nh)
+                val nw = clampFloat(maxW * scale, 0.08f, 1f)
+                val nh = clampFloat(maxH * scale, 0.08f, 1f)
+                val left = clampFloat(cx - nw * 0.5f, 0f, 1f - nw)
+                val top = clampFloat(cy - nh * 0.5f, 0f, 1f - nh)
                 state.copy(
                     crop = CropRect(
                         left = left,
@@ -762,6 +798,79 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             _state.update { it.copy(savedLuts = entries) }
+            scheduleLutThumbs()
+        }
+    }
+
+    /** Toggle a look in the Favourites section; persisted across launches. */
+    fun toggleFavouriteLook(lookId: String) {
+        val next = _state.value.favouriteLooks.toMutableSet()
+        if (!next.add(lookId)) next.remove(lookId)
+        settingsStore.favouriteLooks = next
+        _state.update { it.copy(favouriteLooks = next) }
+    }
+
+    /** Toggle a saved LUT in the Favourites section; persisted across launches. */
+    fun toggleFavouriteLut(lutId: String) {
+        val next = _state.value.favouriteLuts.toMutableSet()
+        if (!next.add(lutId)) next.remove(lutId)
+        settingsStore.favouriteLuts = next
+        _state.update { it.copy(favouriteLuts = next) }
+    }
+
+    fun isFavouriteLook(lookId: String): Boolean = lookId in _state.value.favouriteLooks
+
+    /**
+     * Small graded thumbnails for every saved .cube so the LUT section looks like the
+     * stock cards. Rendered lazily (only when the LUT section is opened) and progressively
+     * published so the list fills in instead of blocking.
+     */
+    fun scheduleLutThumbs() {
+        val snapshot = _state.value
+        val source = snapshot.source
+        val entries = snapshot.savedLuts
+        if (source == null || entries.isEmpty()) {
+            if (snapshot.lutThumbs.isNotEmpty()) _state.update { it.copy(lutThumbs = emptyMap()) }
+            return
+        }
+        // Already fully rendered for this frame and library.
+        if (snapshot.lutThumbs.isNotEmpty() && entries.all { it.id in snapshot.lutThumbs }) return
+        val generation = ++lutThumbGeneration
+        lutThumbJob?.cancel()
+        lutThumbJob = viewModelScope.launch(Dispatchers.Default) {
+            val base = PhotoRenderer.render(
+                source = source,
+                adjustments = Adjustments.Neutral,
+                look = Looks.Original,
+                lookStrength = 1f,
+                light = PortraitLight(enabled = false),
+                maxDim = LUT_THUMB_DIM,
+                bakeEffects = false
+            )
+            val produced = LinkedHashMap<String, Bitmap>()
+            for (entry in entries) {
+                if (generation != lutThumbGeneration) break
+                val thumb = runCatching {
+                    val text = File(entry.path).readText()
+                    val lut = CubeLutParser.parse(text, entry.name)
+                    PhotoRenderer.render(
+                        source = base,
+                        adjustments = Adjustments.Neutral,
+                        look = Looks.Original,
+                        lookStrength = 1f,
+                        light = PortraitLight(enabled = false),
+                        maxDim = LUT_THUMB_DIM,
+                        lut = lut,
+                        lutStrength = 1f,
+                        bakeEffects = false
+                    )
+                }.getOrNull() ?: continue
+                produced[entry.id] = thumb
+                if (generation == lutThumbGeneration) {
+                    _state.update { it.copy(lutThumbs = LinkedHashMap(produced)) }
+                }
+            }
+            base.recycle()
         }
     }
 
@@ -983,10 +1092,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         crop: CropRect
     ): Bitmap {
         if (!crop.isCropped || source.width < 2 || source.height < 2) return source
-        val left = (crop.left.coerceIn(0f, 0.95f) * source.width).roundToInt().coerceIn(0, source.width - 1)
-        val top = (crop.top.coerceIn(0f, 0.95f) * source.height).roundToInt().coerceIn(0, source.height - 1)
-        val right = (crop.right.coerceIn(crop.left + 0.05f, 1f) * source.width).roundToInt().coerceIn(left + 1, source.width)
-        val bottom = (crop.bottom.coerceIn(crop.top + 0.05f, 1f) * source.height).roundToInt().coerceIn(top + 1, source.height)
+        val left = clampFloat(crop.left, 0f, 0.95f).let { (it * source.width).roundToInt() }.coerceIn(0, source.width - 1)
+        val top = clampFloat(crop.top, 0f, 0.95f).let { (it * source.height).roundToInt() }.coerceIn(0, source.height - 1)
+        val right = clampFloat(crop.right, crop.left + 0.05f, 1f).let { (it * source.width).roundToInt() }
+            .coerceIn(left + 1, source.width)
+        val bottom = clampFloat(crop.bottom, crop.top + 0.05f, 1f).let { (it * source.height).roundToInt() }
+            .coerceIn(top + 1, source.height)
         val outW = (right - left).coerceAtLeast(1)
         val outH = (bottom - top).coerceAtLeast(1)
         if (kotlin.math.abs(crop.straighten) <= 0.05f) {
@@ -1144,6 +1255,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         depthJob?.cancel()
         lutJob?.cancel()
         overlayJob?.cancel()
+        lutThumbJob?.cancel()
     }
 
     private data class EditSnapshot(
@@ -1167,6 +1279,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private companion object {
         const val MAX_DECODE_DIM = 2560
         const val THUMB_DIM = 144
+        const val LUT_THUMB_DIM = 110
         val SAFE_EXIF_TAGS = listOf(
             ExifInterface.TAG_DATETIME,
             ExifInterface.TAG_DATETIME_ORIGINAL,

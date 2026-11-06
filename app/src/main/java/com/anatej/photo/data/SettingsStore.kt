@@ -39,6 +39,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_PRESERVE_EXIF, true)
         set(value) = prefs.edit().putBoolean(KEY_PRESERVE_EXIF, value).apply()
 
+    var favouriteLooks: Set<String>
+        get() = prefs.getStringSet(KEY_FAVOURITE_LOOKS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_FAVOURITE_LOOKS, value).apply()
+
+    var favouriteLuts: Set<String>
+        get() = prefs.getStringSet(KEY_FAVOURITE_LUTS, emptySet()) ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_FAVOURITE_LUTS, value).apply()
+
     fun restoreDefaults() {
         prefs.edit().clear().apply()
     }
@@ -50,5 +58,7 @@ class SettingsStore(context: Context) {
         const val KEY_EXPORT_QUALITY = "export_quality"
         const val KEY_RESCUE = "auto_rescue_strength"
         const val KEY_PRESERVE_EXIF = "preserve_exif"
+        const val KEY_FAVOURITE_LOOKS = "favourite_looks"
+        const val KEY_FAVOURITE_LUTS = "favourite_luts"
     }
 }
