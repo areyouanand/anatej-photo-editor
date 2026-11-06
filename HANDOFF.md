@@ -1,20 +1,18 @@
 # Anatej Photo Editor — Handoff
 
 **Version:** 0.3.0 (versionCode 3)
-**Last updated:** 2026-11-06, after Auto Rescue strength + authentic camera looks
+**Last updated:** 2026-11-06, after flashlight-style relight pass
 **Location:** `/mnt/1tb/AI stuff/FUJI Camera`
 **Platform:** Android 10+ (`minSdk 29`), built against API 36
 **Stack:** Kotlin 2.2.21, Jetpack Compose, AGP 8.13.2, Gradle 8.14.4, JDK 17,
 TensorFlow Lite 2.17, ML Kit selfie segmentation
 **Artifact:** `app/build/outputs/apk/debug/app-debug.apk` (~152 MB debug)
-**SHA-256:** `0c2a3ef5f912f685c10de025da4023fbeb61bc0cdaf5280c09bf737a22f1929d`
+**SHA-256:** `3ea41de9685b7e998b2225eb64419d818e63d1d2c9d0e4024a7374e865246786`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
-**State:** latest 0.3.0 APK (SHA above) **installed on the CPH2841** and smoke-tested on
-device: 0–100 gentle-max Brighten slider, Export quality setting (70–100%), About credits
-(@areyouanand + GitHub link), Auto-rescue strength slider (30–200%), and rebuilt looks
-(Fuji/Nikon/Hasselblad with grain/vignette/sharpness/bloom). Velvia preview + exported
-JPEG verified with per-stock contrast/saturation and bloom. The user verified Settings/About
-manually. No app crash in logcat. The emulator is closed. Test media was removed.
+**State:** latest 0.3.0 APK (SHA above) **installed on the CPH2841**. Relight retuned to a
+flashlight beam (beam² falloff, thin wrap, minimal fill, 5% default spill) replacing the
+bright haze. Install succeeded; the phone was on the lock screen for the on-device
+verification, so the visual pass was pending unlock. Emulator closed. Test media removed.
 
 ---
 
