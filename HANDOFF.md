@@ -10,12 +10,11 @@ TensorFlow Lite 2.17, ML Kit selfie segmentation
 **SHA-256:** `0c2a3ef5f912f685c10de025da4023fbeb61bc0cdaf5280c09bf737a22f1929d`
 **GitHub:** https://github.com/areyouanand/anatej-photo-editor
 **State:** latest 0.3.0 APK (SHA above) **installed on the CPH2841** and smoke-tested on
-device: simplified 0–100 Brighten face slider (OPPO-style single control), advanced tools
-collapsed behind a toggle. The displayed 0–100 scale tops out at the old 30% strength, so
-even 100 feels gentle. Added an Export quality setting (70–100%, default 95%) and About
-credits (@areyouanand + GitHub link). Pushed to `areyouanand/anatej-photo-editor` (master).
-The user verified the Settings quality slider and About credits manually on the phone.
-No app crash in logcat. The emulator is closed. Test media was removed.
+device: 0–100 gentle-max Brighten slider, Export quality setting (70–100%), About credits
+(@areyouanand + GitHub link), Auto-rescue strength slider (30–200%), and rebuilt looks
+(Fuji/Nikon/Hasselblad with grain/vignette/sharpness/bloom). Velvia preview + exported
+JPEG verified with per-stock contrast/saturation and bloom. The user verified Settings/About
+manually. No app crash in logcat. The emulator is closed. Test media was removed.
 
 ---
 
@@ -162,7 +161,7 @@ The editor header is reserved for back, undo/redo, and save.
 | Softbox relight | Presets (Natural/Rembrandt/Butterfly/Loop/Side/Top) and AZ/EL direction pad change the shading; 91% intensity stays readable under soft clip; export matches preview pixel-for-pixel in structure |
 | Light UX | VIEW MASK orange tint, interactive DRAG LIGHT / LIGHT OFF / VIEW MASK / LIGHT⇄PAN chips, labeled SUBJECT MASKING + Background spill sliders, scrollable Light panel (360 dp), slider haptic detent ticks |
 | Export quality + About | Settings stores `exportQuality` (70–100%, default 95%); `saveToGallery` compresses with it. About shows `DEVELOPER: @areyouanand` and a tappable `github.com/areyouanand/anatej-photo-editor` link. **User-verified manually on device.** |
-| Auto-rescue strength + looks | `autoRescueStrength` (30–200%) scales the whole `autoEnhance` recipe (exposure/contrast/saturation + relight). Looks rebuilt: Fujifilm (Provia/Velvia/Chrome/NEG/Astia/Acros/Reala), Nikon (+Flat), Hasselblad (+X2D) each with distinct grain/vignette/sharpness/bloom recipes; preview shows bloom/sharpen via a blurred overlay (`RelightMap.blurredCopy`), export bakes unsharp-mask + highlight bloom in `PhotoRenderer.applyEnhancements`. |
+| Auto-rescue strength + looks | `autoRescueStrength` (30–200%) scales the whole `autoEnhance` recipe (exposure/contrast/saturation + relight). Looks rebuilt: Fujifilm (Provia/Velvia/Chrome/NEG/Astia/Acros/Reala), Nikon (+Flat), Hasselblad (+X2D) each with distinct grain/vignette/sharpness/bloom recipes; preview shows bloom/sharpen via a blurred overlay (`RelightMap.blurredCopy`), export bakes unsharp-mask + highlight bloom in `PhotoRenderer.applyEnhancements`. On-device: slider visible at 100% default, Fuji series renders, Velvia preview and 1920×1080 export both show the stock curve. |
 | Simple brighten | Light panel opens on one **Brighten face** slider (`EditorViewModel.brightenFace` auto-places on the subject and enables the key) + Auto-brighten; presets/direction pad/sliders sit behind **Advanced tools**. Display scale is 0–100, but the internal model maps it to `(intensity/100)·30%` of full relight — 100 behaves like the old 30% mark. |
 | Emulator | Stopped after the pass at the user's request; no emulator process/window remains |
 
